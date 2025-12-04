@@ -8,11 +8,13 @@ class OpenPonyLogger {
         this.sessions = this.loadMockSessions();
         this.gauges = {};
         this.animationFrames = {};
+        this.additionalPids = [];
         
         this.init();
     }
 
     init() {
+        this.loadConfiguration();
         this.setupTabs();
         this.setupGauges();
         this.setupGForceDisplay();
@@ -21,6 +23,7 @@ class OpenPonyLogger {
         this.setupConfig();
         this.startDataSimulation();
         this.updateConnectionStatus();
+        this.applyStartupTab();
     }
 
     // Tab Navigation
@@ -656,6 +659,7 @@ class OpenPonyLogger {
         const factoryResetButton = document.getElementById('factoryReset');
         const brightnessSlider = document.getElementById('brightness');
         const brightnessValue = document.getElementById('brightnessValue');
+        const addPidButton = document.getElementById('addPidButton');
 
         brightnessSlider.addEventListener('input', (e) => {
             brightnessValue.textContent = e.target.value + '%';
@@ -676,6 +680,122 @@ class OpenPonyLogger {
                 this.factoryReset();
             }
         });
+
+        // Additional PIDs management
+        addPidButton.addEventListener('click', () => {
+            this.addPidEntry();
+        });
+
+        this.renderAdditionalPids();
+    }
+
+    loadConfiguration() {
+        // Load configuration from localStorage
+        const saved = localStorage.getItem('openPonyLoggerConfig');
+        if (saved) {
+            try {
+                const config = JSON.parse(saved);
+                this.additionalPids = config.additionalPids || [];
+                
+                // Apply startup tab preference
+                if (config.startupTab) {
+                    localStorage.setItem('startupTab', config.startupTab);
+                }
+            } catch (e) {
+                console.error('Failed to load configuration:', e);
+            }
+        }
+    }
+
+    applyStartupTab() {
+        const startupTab = localStorage.getItem('startupTab') || 'about';
+        
+        // Deactivate all tabs
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        
+        // Activate startup tab
+        const tabButton = document.querySelector(`[data-tab="${startupTab}"]`);
+        const tabContent = document.getElementById(startupTab);
+        
+        if (tabButton && tabContent) {
+            tabButton.classList.add('active');
+            tabContent.classList.add('active');
+            this.onTabChange(startupTab);
+        }
+    }
+
+    addPidEntry(pid = '', hz = '1') {
+        const entry = {
+            id: Date.now(),
+            pid: pid,
+            hz: hz
+        };
+        this.additionalPids.push(entry);
+        this.renderAdditionalPids();
+    }
+
+    removePidEntry(id) {
+        this.additionalPids = this.additionalPids.filter(p => p.id !== id);
+        this.renderAdditionalPids();
+    }
+
+    renderAdditionalPids() {
+        const container = document.getElementById('additionalPidsList');
+        
+        if (this.additionalPids.length === 0) {
+            container.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 1rem;">No additional PIDs configured. Click "Add PID" to monitor custom parameters.</p>';
+            return;
+        }
+
+        container.innerHTML = this.additionalPids.map(pid => `
+            <div class="pid-entry" data-pid-id="${pid.id}">
+                <div>
+                    <label>PID (Hex)</label>
+                    <input 
+                        type="text" 
+                        class="pid-hex" 
+                        value="${pid.pid}" 
+                        placeholder="e.g., 010C"
+                        maxlength="4"
+                        data-pid-id="${pid.id}">
+                </div>
+                <div style="grid-column: span 1;">
+                    <label>Sample Rate</label>
+                    <select class="pid-hz" data-pid-id="${pid.id}">
+                        <option value="10" ${pid.hz === '10' ? 'selected' : ''}>10 Hz</option>
+                        <option value="5" ${pid.hz === '5' ? 'selected' : ''}>5 Hz</option>
+                        <option value="1" ${pid.hz === '1' ? 'selected' : ''}>1 Hz</option>
+                        <option value="0.5" ${pid.hz === '0.5' ? 'selected' : ''}>0.5 Hz</option>
+                        <option value="0.25" ${pid.hz === '0.25' ? 'selected' : ''}>0.25 Hz</option>
+                        <option value="0.2" ${pid.hz === '0.2' ? 'selected' : ''}>0.2 Hz</option>
+                        <option value="0.1" ${pid.hz === '0.1' ? 'selected' : ''}>0.1 Hz</option>
+                    </select>
+                </div>
+                <button class="btn btn-danger btn-sm" onclick="app.removePidEntry(${pid.id})">Remove</button>
+            </div>
+        `).join('');
+
+        // Add event listeners for input changes
+        container.querySelectorAll('.pid-hex').forEach(input => {
+            input.addEventListener('input', (e) => {
+                const id = parseInt(e.target.dataset.pidId);
+                const entry = this.additionalPids.find(p => p.id === id);
+                if (entry) {
+                    entry.pid = e.target.value.toUpperCase();
+                }
+            });
+        });
+
+        container.querySelectorAll('.pid-hz').forEach(select => {
+            select.addEventListener('change', (e) => {
+                const id = parseInt(e.target.dataset.pidId);
+                const entry = this.additionalPids.find(p => p.id === id);
+                if (entry) {
+                    entry.hz = e.target.value;
+                }
+            });
+        });
     }
 
     saveConfiguration() {
@@ -692,9 +812,15 @@ class OpenPonyLogger {
             wifiSSID: document.getElementById('wifiSSID').value,
             obdProtocol: document.getElementById('obdProtocol').value,
             obdTimeout: document.getElementById('obdTimeout').value,
+            startupTab: document.getElementById('startupTab').value,
             darkMode: document.getElementById('darkMode').checked,
-            brightness: document.getElementById('brightness').value
+            brightness: document.getElementById('brightness').value,
+            additionalPids: this.additionalPids
         };
+
+        // Save to localStorage
+        localStorage.setItem('openPonyLoggerConfig', JSON.stringify(config));
+        localStorage.setItem('startupTab', config.startupTab);
 
         console.log('Saving configuration:', config);
         alert('Configuration saved successfully!');
@@ -708,8 +834,13 @@ class OpenPonyLogger {
         document.getElementById('autoRecord').checked = true;
         document.getElementById('recordGPS').checked = true;
         document.getElementById('recordAccel').checked = true;
+        document.getElementById('startupTab').value = 'about';
         document.getElementById('brightness').value = '80';
         document.getElementById('brightnessValue').textContent = '80%';
+        this.additionalPids = [];
+        this.renderAdditionalPids();
+        localStorage.removeItem('openPonyLoggerConfig');
+        localStorage.setItem('startupTab', 'about');
         alert('Configuration reset to defaults');
     }
 
@@ -717,6 +848,7 @@ class OpenPonyLogger {
         this.sessions = [];
         this.resetConfiguration();
         this.renderSessions();
+        localStorage.clear();
         alert('Factory reset complete');
     }
 

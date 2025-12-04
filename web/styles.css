@@ -594,6 +594,53 @@ body {
     color: var(--text-primary);
 }
 
+/* Additional PIDs Section */
+.additional-pids-list {
+    display: grid;
+    gap: 1rem;
+}
+
+.pid-entry {
+    display: grid;
+    grid-template-columns: 150px 1fr 180px auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.pid-entry label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.pid-entry input[type="text"],
+.pid-entry select {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.pid-entry input[type="text"] {
+    text-transform: uppercase;
+    font-family: 'Courier New', monospace;
+}
+
+.pid-entry input[type="text"]:focus,
+.pid-entry select:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.pid-entry .btn-danger {
+    padding: 0.5rem 1rem;
+}
+
 .config-actions {
     display: flex;
     gap: 1rem;
@@ -700,6 +747,17 @@ body {
     
     .config-row label {
         margin-bottom: 0.25rem;
+    }
+    
+    .pid-entry {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+    
+    .pid-entry > div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
     }
     
     .session-card {

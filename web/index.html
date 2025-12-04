@@ -390,7 +390,30 @@
                     </div>
 
                     <div class="config-card">
+                        <h3>Additional PIDs</h3>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+                            Monitor custom OBD-II PIDs beyond standard parameters. Enter PIDs in hexadecimal format (e.g., 010C for RPM).
+                        </p>
+                        <div id="additionalPidsList" class="additional-pids-list">
+                            <!-- Dynamically populated PID entries -->
+                        </div>
+                        <button class="btn btn-secondary" id="addPidButton" style="margin-top: 1rem;">+ Add PID</button>
+                    </div>
+
+                    <div class="config-card">
                         <h3>Display Settings</h3>
+                        <div class="config-row">
+                            <label for="startupTab">Default Startup Tab:</label>
+                            <select id="startupTab">
+                                <option value="about" selected>About</option>
+                                <option value="status">Status</option>
+                                <option value="gauges">Gauges</option>
+                                <option value="gforce">G-Force</option>
+                                <option value="gps">GPS</option>
+                                <option value="sessions">Sessions</option>
+                                <option value="config">Config</option>
+                            </select>
+                        </div>
                         <div class="config-row checkbox-row">
                             <input type="checkbox" id="darkMode" checked>
                             <label for="darkMode">Dark Mode</label>
