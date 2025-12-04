@@ -5,7 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenPonyLogger</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.7/all/gauge.min.js"></script>
+    <!-- Canvas-gauges: Try local first, fallback to CDN -->
+    <script>
+        // Try to load local gauge library first
+        var script = document.createElement('script');
+        script.src = 'gauge.min.js';
+        script.onerror = function() {
+            // If local fails, load from CDN (only when online)
+            console.log('Loading canvas-gauges from CDN...');
+            var cdnScript = document.createElement('script');
+            cdnScript.src = 'https://cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.7/all/gauge.min.js';
+            document.head.appendChild(cdnScript);
+        };
+        document.head.appendChild(script);
+    </script>
 </head>
 <body>
     <div class="container">
