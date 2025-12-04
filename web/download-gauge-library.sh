@@ -10,7 +10,7 @@ echo ""
 # Check if curl is available
 if ! command -v curl &> /dev/null; then
     echo "❌ curl not found. Please install curl or download manually:"
-    echo "   https://github.com/Mikhus/canvas-gauges/releases/download/v2.1.7/gauge.min.js"
+    echo "   https://cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.7/all/gauge.min.js"
     exit 1
 fi
 
@@ -20,7 +20,7 @@ echo "   Source: GitHub Releases (v2.1.7)"
 echo ""
 
 curl -L -o gauge.min.js \
-     https://github.com/Mikhus/canvas-gauges/releases/download/v2.1.7/gauge.min.js
+     https://cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.7/all/gauge.min.js
 
 if [ $? -eq 0 ]; then
     # Verify file was downloaded
@@ -49,10 +49,10 @@ else
     echo ""
     echo "Alternative methods:"
     echo "1. Manual download:"
-    echo "   https://github.com/Mikhus/canvas-gauges/releases/download/v2.1.7/gauge.min.js"
+    echo "   https://cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.7/all/gauge.min.js"
     echo ""
     echo "2. Using wget:"
-    echo "   wget -O gauge.min.js https://cdn.jsdelivr.net/npm/canvas-gauges@2.1.7/gauge.min.js"
+    echo "   wget -O gauge.min.js https://cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.7/all/gauge.min.js"
     echo ""
     echo "3. Using NPM:"
     echo "   npm install canvas-gauges"

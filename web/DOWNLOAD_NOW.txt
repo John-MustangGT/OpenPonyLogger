@@ -1,0 +1,61 @@
+╔═══════════════════════════════════════════════════════════════╗
+║     DOWNLOAD GAUGE LIBRARY - ONE COMMAND                      ║
+╚═══════════════════════════════════════════════════════════════╝
+
+CORRECT COMMAND FOR YOUR PICO:
+═══════════════════════════════
+
+curl -o gauge.min.js https://unpkg.com/canvas-gauges@2.1.7/gauge.min.js
+
+THAT'S IT! ✓
+
+VERIFY DOWNLOAD:
+════════════════
+
+ls -lh gauge.min.js
+
+Should show: ~493K file
+
+ALTERNATIVE URLs (if first doesn't work):
+═════════════════════════════════════════
+
+# jsDelivr CDN:
+curl -o gauge.min.js https://cdn.jsdelivr.net/npm/canvas-gauges@2.1.7/gauge.min.js
+
+# Cloudflare CDN:
+curl -o gauge.min.js https://cdnjs.cloudflare.com/ajax/libs/canvas-gauges/2.1.7/gauge.min.js
+
+BROWSER DOWNLOAD:
+═════════════════
+
+Visit in browser:
+https://unpkg.com/canvas-gauges@2.1.7/gauge.min.js
+
+Right-click → Save As → gauge.min.js
+
+WHAT TO DO AFTER:
+═════════════════
+
+1. Place gauge.min.js in /web directory (same as index.html)
+2. Refresh your browser (Ctrl+F5)
+3. All gauges should work!
+
+FILE STRUCTURE ON PICO:
+═══════════════════════
+
+/web/
+├── index.html
+├── styles.css
+├── app.js
+└── gauge.min.js  ← This file!
+
+ALL 4 FILES TOGETHER = WORKING APP ✓
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TL;DR: Run this on your Pico:
+curl -o gauge.min.js https://unpkg.com/canvas-gauges@2.1.7/gauge.min.js
+
+Done! 🎉
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
