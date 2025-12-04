@@ -818,3 +818,150 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--accent-primary);
 }
+
+/* Fuel Log Styles */
+.fuel-entry-card {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border-left: 4px solid var(--primary);
+}
+
+.fuel-entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.fuel-entry-date {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: var(--text);
+}
+
+.fuel-entry-mpg {
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: var(--primary);
+}
+
+.fuel-entry-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.fuel-detail-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+}
+
+.fuel-detail-label {
+    color: var(--text-secondary);
+}
+
+.fuel-detail-value {
+    color: var(--text);
+    font-weight: 500;
+}
+
+.fuel-entry-notes {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.fuel-entry-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+/* PID Test Results Styles */
+#pidTestOutput {
+    line-height: 1.5;
+}
+
+.pid-test-supported {
+    color: #4caf50;
+}
+
+.pid-test-unsupported {
+    color: #f44336;
+}
+
+.pid-test-testing {
+    color: var(--primary);
+}
+
+textarea {
+    width: 100%;
+    padding: 0.5rem;
+    background: var(--surface);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+}
+
+textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+}
+
+/* Bluetooth Device List Styles */
+#bluetoothDeviceList select {
+    width: 100%;
+}
+
+.status-connected {
+    background: #4caf50;
+    color: white;
+}
+
+.status-disconnected {
+    background: #f44336;
+    color: white;
+}
+
+/* Network Configuration Styles */
+#clientNetworkSettings {
+    animation: fadeIn 0.3s ease-in;
+}
+
+#staticIPSettings {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Input validation hints */
+input[type="text"]::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+input[type="text"]:focus::placeholder {
+    opacity: 0.4;
+}

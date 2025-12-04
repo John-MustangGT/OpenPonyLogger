@@ -7,16 +7,39 @@
     <link rel="stylesheet" href="styles.css">
     <!-- Canvas-gauges: Try local first, fallback to CDN -->
     <script>
+        // Flag to track if gauge library is loaded
+        window.gaugeLibraryLoaded = false;
+        
         // Try to load local gauge library first
         var script = document.createElement('script');
         script.src = 'gauge.min.js';
+        
+        script.onload = function() {
+            console.log('✓ Gauge library loaded from local file');
+            window.gaugeLibraryLoaded = true;
+            window.dispatchEvent(new Event('gaugeLibraryReady'));
+        };
+        
         script.onerror = function() {
             // If local fails, load from CDN (only when online)
-            console.log('Loading canvas-gauges from CDN...');
+            console.log('⚠ Local gauge.min.js not found, trying CDN...');
             var cdnScript = document.createElement('script');
             cdnScript.src = 'https://cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.7/all/gauge.min.js';
+            
+            cdnScript.onload = function() {
+                console.log('✓ Gauge library loaded from CDN');
+                window.gaugeLibraryLoaded = true;
+                window.dispatchEvent(new Event('gaugeLibraryReady'));
+            };
+            
+            cdnScript.onerror = function() {
+                console.error('❌ Failed to load gauge library from both local and CDN!');
+                console.error('Please download gauge.min.js - see OFFLINE_SETUP.md');
+            };
+            
             document.head.appendChild(cdnScript);
         };
+        
         document.head.appendChild(script);
     </script>
 </head>
@@ -39,6 +62,7 @@
             <button class="tab-button" data-tab="gforce">G-Force</button>
             <button class="tab-button" data-tab="gps">GPS</button>
             <button class="tab-button" data-tab="sessions">Sessions</button>
+            <button class="tab-button" data-tab="fuellog">Fuel Log</button>
             <button class="tab-button" data-tab="config">Config</button>
         </nav>
 
@@ -314,6 +338,114 @@
                 </div>
             </div>
 
+            <!-- Fuel Log Tab -->
+            <div class="tab-content" id="fuellog">
+                <div class="sessions-header">
+                    <h2>Fuel Log</h2>
+                    <div class="session-controls">
+                        <button class="btn btn-primary" id="addFuelEntry">Add Fill-Up</button>
+                        <button class="btn btn-secondary" id="exportFuelLog">Export Log</button>
+                    </div>
+                </div>
+
+                <!-- Add Fuel Entry Form (Initially Hidden) -->
+                <div class="info-card" id="fuelEntryForm" style="display: none; margin-bottom: 1rem;">
+                    <h3>New Fill-Up Entry</h3>
+                    <div class="config-sections">
+                        <div class="config-card">
+                            <div class="config-row">
+                                <label for="fuelDate">Date:</label>
+                                <input type="date" id="fuelDate">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelTime">Time:</label>
+                                <input type="time" id="fuelTime">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelOdometer">Odometer (miles):</label>
+                                <input type="number" id="fuelOdometer" step="0.1" placeholder="e.g., 45231.5">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelGallons">Gallons Added:</label>
+                                <input type="number" id="fuelGallons" step="0.01" placeholder="e.g., 15.23">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelPricePerGallon">Price per Gallon:</label>
+                                <input type="number" id="fuelPricePerGallon" step="0.01" placeholder="e.g., 3.45">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelLocation">Location (optional):</label>
+                                <input type="text" id="fuelLocation" placeholder="e.g., Shell on Route 9">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelNotes">Notes (optional):</label>
+                                <textarea id="fuelNotes" rows="2" placeholder="Full tank, highway driving, etc."></textarea>
+                            </div>
+                            <div class="config-row" style="gap: 0.5rem;">
+                                <button class="btn btn-primary" id="saveFuelEntry">Save Entry</button>
+                                <button class="btn btn-secondary" id="cancelFuelEntry">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fuel Statistics -->
+                <div class="info-card" style="margin-bottom: 1rem;">
+                    <h3>Fuel Economy Statistics</h3>
+                    <div class="status-grid">
+                        <div class="status-card">
+                            <h4>Last Fill-Up</h4>
+                            <div class="status-row">
+                                <span>MPG:</span>
+                                <span id="lastMpg">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Cost/Mile:</span>
+                                <span id="lastCostPerMile">--</span>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <h4>Last 3 Fills Average</h4>
+                            <div class="status-row">
+                                <span>Avg MPG:</span>
+                                <span id="avg3Mpg">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Avg Cost/Mile:</span>
+                                <span id="avg3CostPerMile">--</span>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <h4>Overall Average</h4>
+                            <div class="status-row">
+                                <span>Avg MPG:</span>
+                                <span id="overallMpg">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Total Miles:</span>
+                                <span id="totalMiles">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Total Gallons:</span>
+                                <span id="totalGallons">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Total Cost:</span>
+                                <span id="totalCost">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fuel Log List -->
+                <div class="info-card">
+                    <h3>Fill-Up History</h3>
+                    <div id="fuelLogList" class="sessions-list">
+                        <!-- Dynamically populated with fuel entries -->
+                    </div>
+                </div>
+            </div>
+
             <!-- Config Tab -->
             <div class="tab-content" id="config">
                 <div class="config-sections">
@@ -383,6 +515,81 @@
                             <label for="wifiPassword">Password:</label>
                             <input type="password" id="wifiPassword" placeholder="••••••••">
                         </div>
+
+                        <!-- Client Mode Network Settings -->
+                        <div id="clientNetworkSettings" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                            <h4 style="margin: 0 0 1rem 0; color: var(--text);">Network Settings (Client Mode)</h4>
+                            
+                            <div class="config-row checkbox-row">
+                                <input type="checkbox" id="useDHCP" checked>
+                                <label for="useDHCP">Use DHCP (Automatic IP)</label>
+                            </div>
+
+                            <!-- Static IP Configuration (hidden when DHCP enabled) -->
+                            <div id="staticIPSettings" style="display: none; margin-top: 1rem;">
+                                <div class="config-row">
+                                    <label for="staticIP">IP Address:</label>
+                                    <input type="text" id="staticIP" placeholder="192.168.1.100">
+                                </div>
+                                <div class="config-row">
+                                    <label for="subnetMask">Subnet Mask (CIDR):</label>
+                                    <input type="text" id="subnetMask" placeholder="24 (or 255.255.255.0)">
+                                </div>
+                                <div class="config-row">
+                                    <label for="gateway">Gateway:</label>
+                                    <input type="text" id="gateway" placeholder="192.168.1.1">
+                                </div>
+                                <div class="config-row">
+                                    <label for="dnsServer">DNS Server:</label>
+                                    <input type="text" id="dnsServer" placeholder="8.8.8.8">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="config-card">
+                        <h3>Bluetooth Configuration</h3>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+                            Scan for nearby Bluetooth devices to pair with OpenPonyLogger.
+                        </p>
+                        
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                            <button class="btn btn-primary" id="scanBluetoothButton">
+                                <span id="btScanButtonText">Scan for Devices</span>
+                            </button>
+                            <button class="btn btn-secondary" id="refreshBluetoothButton" style="display: none;">Refresh</button>
+                        </div>
+
+                        <!-- Bluetooth Device List -->
+                        <div id="bluetoothDeviceList" style="display: none;">
+                            <h4 style="margin: 0 0 0.5rem 0;">Available Devices:</h4>
+                            <div id="btDeviceDropdown" class="config-row">
+                                <label for="btDeviceSelect">Select Device:</label>
+                                <select id="btDeviceSelect">
+                                    <option value="">-- No devices found --</option>
+                                </select>
+                            </div>
+                            <div class="config-row">
+                                <button class="btn btn-primary" id="pairBluetoothButton" disabled>Pair Device</button>
+                                <button class="btn btn-secondary" id="unpairBluetoothButton" style="display: none;">Unpair</button>
+                            </div>
+                        </div>
+
+                        <!-- Paired Device Status -->
+                        <div id="pairedDeviceStatus" style="margin-top: 1rem; padding: 0.75rem; background: var(--surface); border-radius: 4px; display: none;">
+                            <div class="status-row">
+                                <span>Paired Device:</span>
+                                <span id="pairedDeviceName" style="color: var(--primary); font-weight: bold;">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Connection Status:</span>
+                                <span id="btConnectionStatus" class="status-badge">Disconnected</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Signal Strength:</span>
+                                <span id="btSignalStrength">--</span>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="config-card">
@@ -407,6 +614,34 @@
                         <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
                             Monitor custom OBD-II PIDs beyond standard parameters. Enter PIDs in hexadecimal format (e.g., 010C for RPM).
                         </p>
+                        
+                        <!-- Test PIDs Section -->
+                        <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--surface); border-radius: 4px;">
+                            <h4 style="margin: 0 0 0.5rem 0;">PID Testing</h4>
+                            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">
+                                Test all PIDs (built-in + custom) to see which ones your vehicle supports. Results will show enabled/disabled status.
+                            </p>
+                            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                                <button class="btn btn-primary" id="testAllPidsButton">Test All PIDs</button>
+                                <button class="btn btn-secondary" id="testCustomPidsButton">Test Custom PIDs Only</button>
+                            </div>
+                            
+                            <!-- Test Results -->
+                            <div id="pidTestResults" style="display: none;">
+                                <h4 style="margin: 0.5rem 0;">Test Results:</h4>
+                                <div id="pidTestProgress" style="margin-bottom: 0.5rem; color: var(--primary);">
+                                    <!-- Progress shown here -->
+                                </div>
+                                <div id="pidTestOutput" style="background: var(--background); padding: 0.75rem; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 0.85rem; max-height: 300px; overflow-y: auto;">
+                                    <!-- Test results shown here -->
+                                </div>
+                                <p id="pidTestSummary" style="margin-top: 0.5rem; font-weight: bold; color: var(--primary);">
+                                    <!-- Summary shown here -->
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <!-- Custom PIDs List -->
                         <div id="additionalPidsList" class="additional-pids-list">
                             <!-- Dynamically populated PID entries -->
                         </div>
@@ -424,6 +659,7 @@
                                 <option value="gforce">G-Force</option>
                                 <option value="gps">GPS</option>
                                 <option value="sessions">Sessions</option>
+                                <option value="fuellog">Fuel Log</option>
                                 <option value="config">Config</option>
                             </select>
                         </div>

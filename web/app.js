@@ -9,6 +9,8 @@ class OpenPonyLogger {
         this.gauges = {};
         this.animationFrames = {};
         this.additionalPids = [];
+        this.fuelLog = this.loadFuelLog();
+        this.pidTestResults = {};
         
         this.init();
     }
@@ -20,6 +22,8 @@ class OpenPonyLogger {
         this.setupGForceDisplay();
         this.setupGPSDisplay();
         this.setupSessions();
+        this.setupFuelLog();
+        this.setupPIDTesting();
         this.setupConfig();
         this.startDataSimulation();
         this.updateConnectionStatus();
@@ -686,6 +690,44 @@ class OpenPonyLogger {
             this.addPidEntry();
         });
 
+        // WiFi mode change handler
+        document.getElementById('wifiMode').addEventListener('change', (e) => {
+            this.toggleClientNetworkSettings(e.target.value === 'client');
+        });
+
+        // DHCP checkbox handler
+        document.getElementById('useDHCP').addEventListener('change', (e) => {
+            this.toggleStaticIPSettings(!e.target.checked);
+        });
+
+        // Bluetooth scan button
+        document.getElementById('scanBluetoothButton').addEventListener('click', () => {
+            this.scanBluetoothDevices();
+        });
+
+        // Bluetooth refresh button
+        document.getElementById('refreshBluetoothButton').addEventListener('click', () => {
+            this.scanBluetoothDevices();
+        });
+
+        // Bluetooth pair button
+        document.getElementById('pairBluetoothButton').addEventListener('click', () => {
+            this.pairBluetoothDevice();
+        });
+
+        // Bluetooth unpair button
+        document.getElementById('unpairBluetoothButton').addEventListener('click', () => {
+            this.unpairBluetoothDevice();
+        });
+
+        // Bluetooth device selection change
+        document.getElementById('btDeviceSelect').addEventListener('change', (e) => {
+            document.getElementById('pairBluetoothButton').disabled = !e.target.value;
+        });
+
+        // Initialize WiFi settings visibility
+        this.toggleClientNetworkSettings(document.getElementById('wifiMode').value === 'client');
+
         this.renderAdditionalPids();
     }
 
@@ -810,6 +852,12 @@ class OpenPonyLogger {
             recordAccel: document.getElementById('recordAccel').checked,
             wifiMode: document.getElementById('wifiMode').value,
             wifiSSID: document.getElementById('wifiSSID').value,
+            // Network settings for client mode
+            useDHCP: document.getElementById('useDHCP').checked,
+            staticIP: document.getElementById('staticIP').value,
+            subnetMask: document.getElementById('subnetMask').value,
+            gateway: document.getElementById('gateway').value,
+            dnsServer: document.getElementById('dnsServer').value,
             obdProtocol: document.getElementById('obdProtocol').value,
             obdTimeout: document.getElementById('obdTimeout').value,
             startupTab: document.getElementById('startupTab').value,
@@ -929,10 +977,589 @@ class OpenPonyLogger {
         // Initial status update
         this.updateStatus();
     }
+
+    // Fuel Log Management
+    setupFuelLog() {
+        // Initialize fuel log display
+        this.renderFuelLog();
+        this.updateFuelStats();
+
+        // Add Fill-Up button
+        document.getElementById('addFuelEntry').addEventListener('click', () => {
+            this.showFuelEntryForm();
+        });
+
+        // Cancel button
+        document.getElementById('cancelFuelEntry').addEventListener('click', () => {
+            this.hideFuelEntryForm();
+        });
+
+        // Save button
+        document.getElementById('saveFuelEntry').addEventListener('click', () => {
+            this.saveFuelEntry();
+        });
+
+        // Export button
+        document.getElementById('exportFuelLog').addEventListener('click', () => {
+            this.exportFuelLog();
+        });
+    }
+
+    loadFuelLog() {
+        const stored = localStorage.getItem('openPonyLoggerFuelLog');
+        return stored ? JSON.parse(stored) : [];
+    }
+
+    saveFuelLogToStorage() {
+        localStorage.setItem('openPonyLoggerFuelLog', JSON.stringify(this.fuelLog));
+    }
+
+    showFuelEntryForm() {
+        const form = document.getElementById('fuelEntryForm');
+        form.style.display = 'block';
+        
+        // Set current date and time
+        const now = new Date();
+        document.getElementById('fuelDate').value = now.toISOString().split('T')[0];
+        document.getElementById('fuelTime').value = now.toTimeString().slice(0, 5);
+        
+        // Clear other fields
+        document.getElementById('fuelOdometer').value = '';
+        document.getElementById('fuelGallons').value = '';
+        document.getElementById('fuelPricePerGallon').value = '';
+        document.getElementById('fuelLocation').value = '';
+        document.getElementById('fuelNotes').value = '';
+    }
+
+    hideFuelEntryForm() {
+        document.getElementById('fuelEntryForm').style.display = 'none';
+    }
+
+    saveFuelEntry() {
+        const odometer = parseFloat(document.getElementById('fuelOdometer').value);
+        const gallons = parseFloat(document.getElementById('fuelGallons').value);
+        const pricePerGallon = parseFloat(document.getElementById('fuelPricePerGallon').value) || 0;
+        const location = document.getElementById('fuelLocation').value;
+        const notes = document.getElementById('fuelNotes').value;
+        const date = document.getElementById('fuelDate').value;
+        const time = document.getElementById('fuelTime').value;
+
+        if (!odometer || !gallons) {
+            alert('Please enter odometer reading and gallons added');
+            return;
+        }
+
+        // Calculate MPG if previous entry exists
+        let mpg = null;
+        let milesDriven = null;
+        if (this.fuelLog.length > 0) {
+            const previousEntry = this.fuelLog[this.fuelLog.length - 1];
+            milesDriven = odometer - previousEntry.odometer;
+            if (milesDriven > 0) {
+                mpg = milesDriven / gallons;
+            }
+        }
+
+        const entry = {
+            id: Date.now(),
+            timestamp: `${date}T${time}`,
+            odometer: odometer,
+            gallons: gallons,
+            pricePerGallon: pricePerGallon,
+            totalCost: gallons * pricePerGallon,
+            location: location,
+            notes: notes,
+            mpg: mpg,
+            milesDriven: milesDriven
+        };
+
+        this.fuelLog.push(entry);
+        this.saveFuelLogToStorage();
+        this.renderFuelLog();
+        this.updateFuelStats();
+        this.hideFuelEntryForm();
+    }
+
+    deleteFuelEntry(id) {
+        if (confirm('Delete this fuel entry? This cannot be undone.')) {
+            this.fuelLog = this.fuelLog.filter(entry => entry.id !== id);
+            this.saveFuelLogToStorage();
+            this.renderFuelLog();
+            this.updateFuelStats();
+        }
+    }
+
+    renderFuelLog() {
+        const container = document.getElementById('fuelLogList');
+        
+        if (this.fuelLog.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 2rem;">No fuel entries yet. Click "Add Fill-Up" to start tracking.</p>';
+            return;
+        }
+
+        // Sort by timestamp, newest first
+        const sortedLog = [...this.fuelLog].sort((a, b) => 
+            new Date(b.timestamp) - new Date(a.timestamp)
+        );
+
+        container.innerHTML = sortedLog.map(entry => {
+            const date = new Date(entry.timestamp);
+            const dateStr = date.toLocaleDateString();
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            return `
+                <div class="fuel-entry-card">
+                    <div class="fuel-entry-header">
+                        <div>
+                            <div class="fuel-entry-date">${dateStr} ${timeStr}</div>
+                            ${entry.location ? `<div style="font-size: 0.9rem; color: var(--text-secondary);">${entry.location}</div>` : ''}
+                        </div>
+                        ${entry.mpg ? `<div class="fuel-entry-mpg">${entry.mpg.toFixed(1)} MPG</div>` : '<div style="color: var(--text-secondary);">First Entry</div>'}
+                    </div>
+                    <div class="fuel-entry-details">
+                        <div class="fuel-detail-item">
+                            <span class="fuel-detail-label">Odometer:</span>
+                            <span class="fuel-detail-value">${entry.odometer.toFixed(1)} mi</span>
+                        </div>
+                        ${entry.milesDriven ? `
+                        <div class="fuel-detail-item">
+                            <span class="fuel-detail-label">Miles Driven:</span>
+                            <span class="fuel-detail-value">${entry.milesDriven.toFixed(1)} mi</span>
+                        </div>
+                        ` : ''}
+                        <div class="fuel-detail-item">
+                            <span class="fuel-detail-label">Gallons:</span>
+                            <span class="fuel-detail-value">${entry.gallons.toFixed(2)} gal</span>
+                        </div>
+                        ${entry.pricePerGallon > 0 ? `
+                        <div class="fuel-detail-item">
+                            <span class="fuel-detail-label">Price/Gal:</span>
+                            <span class="fuel-detail-value">$${entry.pricePerGallon.toFixed(2)}</span>
+                        </div>
+                        <div class="fuel-detail-item">
+                            <span class="fuel-detail-label">Total Cost:</span>
+                            <span class="fuel-detail-value">$${entry.totalCost.toFixed(2)}</span>
+                        </div>
+                        ${entry.mpg ? `
+                        <div class="fuel-detail-item">
+                            <span class="fuel-detail-label">Cost/Mile:</span>
+                            <span class="fuel-detail-value">$${(entry.totalCost / entry.milesDriven).toFixed(3)}</span>
+                        </div>
+                        ` : ''}
+                        ` : ''}
+                    </div>
+                    ${entry.notes ? `<div class="fuel-entry-notes">${entry.notes}</div>` : ''}
+                    <div class="fuel-entry-actions">
+                        <button class="btn btn-sm btn-danger" onclick="app.deleteFuelEntry(${entry.id})">Delete</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    updateFuelStats() {
+        // Last fill-up
+        if (this.fuelLog.length > 0) {
+            const lastEntry = this.fuelLog[this.fuelLog.length - 1];
+            document.getElementById('lastMpg').textContent = lastEntry.mpg ? `${lastEntry.mpg.toFixed(1)} MPG` : 'N/A';
+            if (lastEntry.mpg && lastEntry.pricePerGallon > 0) {
+                const costPerMile = lastEntry.totalCost / lastEntry.milesDriven;
+                document.getElementById('lastCostPerMile').textContent = `$${costPerMile.toFixed(3)}`;
+            } else {
+                document.getElementById('lastCostPerMile').textContent = 'N/A';
+            }
+        } else {
+            document.getElementById('lastMpg').textContent = '--';
+            document.getElementById('lastCostPerMile').textContent = '--';
+        }
+
+        // Last 3 fills average
+        const recentEntries = this.fuelLog.slice(-3).filter(e => e.mpg !== null);
+        if (recentEntries.length > 0) {
+            const avgMpg = recentEntries.reduce((sum, e) => sum + e.mpg, 0) / recentEntries.length;
+            document.getElementById('avg3Mpg').textContent = `${avgMpg.toFixed(1)} MPG`;
+            
+            const entriesWithCost = recentEntries.filter(e => e.pricePerGallon > 0);
+            if (entriesWithCost.length > 0) {
+                const avgCost = entriesWithCost.reduce((sum, e) => sum + (e.totalCost / e.milesDriven), 0) / entriesWithCost.length;
+                document.getElementById('avg3CostPerMile').textContent = `$${avgCost.toFixed(3)}`;
+            } else {
+                document.getElementById('avg3CostPerMile').textContent = 'N/A';
+            }
+        } else {
+            document.getElementById('avg3Mpg').textContent = '--';
+            document.getElementById('avg3CostPerMile').textContent = '--';
+        }
+
+        // Overall average
+        const validEntries = this.fuelLog.filter(e => e.mpg !== null);
+        if (validEntries.length > 0) {
+            const totalMiles = validEntries.reduce((sum, e) => sum + e.milesDriven, 0);
+            const totalGallons = validEntries.reduce((sum, e) => sum + e.gallons, 0);
+            const totalCost = this.fuelLog.reduce((sum, e) => sum + e.totalCost, 0);
+            
+            document.getElementById('overallMpg').textContent = `${(totalMiles / totalGallons).toFixed(1)} MPG`;
+            document.getElementById('totalMiles').textContent = `${totalMiles.toFixed(0)} mi`;
+            document.getElementById('totalGallons').textContent = `${totalGallons.toFixed(1)} gal`;
+            document.getElementById('totalCost').textContent = totalCost > 0 ? `$${totalCost.toFixed(2)}` : 'N/A';
+        } else {
+            document.getElementById('overallMpg').textContent = '--';
+            document.getElementById('totalMiles').textContent = '--';
+            document.getElementById('totalGallons').textContent = '--';
+            document.getElementById('totalCost').textContent = '--';
+        }
+    }
+
+    exportFuelLog() {
+        if (this.fuelLog.length === 0) {
+            alert('No fuel entries to export');
+            return;
+        }
+
+        // Create CSV
+        const headers = ['Date', 'Time', 'Odometer', 'Miles Driven', 'Gallons', 'MPG', 'Price/Gal', 'Total Cost', 'Cost/Mile', 'Location', 'Notes'];
+        const rows = this.fuelLog.map(entry => {
+            const date = new Date(entry.timestamp);
+            return [
+                date.toLocaleDateString(),
+                date.toLocaleTimeString(),
+                entry.odometer.toFixed(1),
+                entry.milesDriven ? entry.milesDriven.toFixed(1) : '',
+                entry.gallons.toFixed(2),
+                entry.mpg ? entry.mpg.toFixed(2) : '',
+                entry.pricePerGallon ? entry.pricePerGallon.toFixed(2) : '',
+                entry.totalCost ? entry.totalCost.toFixed(2) : '',
+                (entry.mpg && entry.pricePerGallon > 0) ? (entry.totalCost / entry.milesDriven).toFixed(3) : '',
+                entry.location || '',
+                entry.notes || ''
+            ];
+        });
+
+        const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+        
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `fuel-log-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // PID Testing
+    setupPIDTesting() {
+        document.getElementById('testAllPidsButton').addEventListener('click', () => {
+            this.testAllPIDs();
+        });
+
+        document.getElementById('testCustomPidsButton').addEventListener('click', () => {
+            this.testCustomPIDs();
+        });
+    }
+
+    async testAllPIDs() {
+        const resultsDiv = document.getElementById('pidTestResults');
+        const progressDiv = document.getElementById('pidTestProgress');
+        const outputDiv = document.getElementById('pidTestOutput');
+        const summaryDiv = document.getElementById('pidTestSummary');
+
+        resultsDiv.style.display = 'block';
+        progressDiv.textContent = 'Testing PIDs...';
+        outputDiv.innerHTML = '';
+        summaryDiv.textContent = '';
+
+        // Standard PIDs to test
+        const standardPids = [
+            { pid: '0C', name: 'Engine RPM' },
+            { pid: '0D', name: 'Vehicle Speed' },
+            { pid: '04', name: 'Engine Load' },
+            { pid: '05', name: 'Coolant Temperature' },
+            { pid: '0F', name: 'Intake Air Temperature' },
+            { pid: '11', name: 'Throttle Position' },
+            { pid: '2F', name: 'Fuel Level' },
+            { pid: 'A6', name: 'Odometer' }
+        ];
+
+        let tested = 0;
+        let supported = 0;
+        const total = standardPids.length + this.additionalPids.length;
+
+        // Test standard PIDs
+        for (const pidInfo of standardPids) {
+            const result = await this.testPID(pidInfo.pid);
+            tested++;
+            
+            if (result.supported) {
+                supported++;
+                outputDiv.innerHTML += `<div class="pid-test-supported">✓ PID ${pidInfo.pid} (${pidInfo.name}): Supported - ${result.value}</div>`;
+            } else {
+                outputDiv.innerHTML += `<div class="pid-test-unsupported">✗ PID ${pidInfo.pid} (${pidInfo.name}): Not Supported</div>`;
+            }
+            
+            progressDiv.textContent = `Testing... ${tested}/${total}`;
+            await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for readability
+        }
+
+        // Test custom PIDs
+        for (const customPid of this.additionalPids) {
+            const result = await this.testPID(customPid.pid);
+            tested++;
+            
+            if (result.supported) {
+                supported++;
+                outputDiv.innerHTML += `<div class="pid-test-supported">✓ PID ${customPid.pid} (Custom): Supported - ${result.value}</div>`;
+            } else {
+                outputDiv.innerHTML += `<div class="pid-test-unsupported">✗ PID ${customPid.pid} (Custom): Not Supported</div>`;
+            }
+            
+            progressDiv.textContent = `Testing... ${tested}/${total}`;
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        progressDiv.textContent = 'Test Complete!';
+        summaryDiv.textContent = `Results: ${supported}/${total} PIDs supported (${((supported/total)*100).toFixed(0)}%)`;
+    }
+
+    async testCustomPIDs() {
+        if (this.additionalPids.length === 0) {
+            alert('No custom PIDs configured. Add custom PIDs in the Additional PIDs section below.');
+            return;
+        }
+
+        const resultsDiv = document.getElementById('pidTestResults');
+        const progressDiv = document.getElementById('pidTestProgress');
+        const outputDiv = document.getElementById('pidTestOutput');
+        const summaryDiv = document.getElementById('pidTestSummary');
+
+        resultsDiv.style.display = 'block';
+        progressDiv.textContent = 'Testing custom PIDs...';
+        outputDiv.innerHTML = '';
+        summaryDiv.textContent = '';
+
+        let tested = 0;
+        let supported = 0;
+
+        for (const customPid of this.additionalPids) {
+            const result = await this.testPID(customPid.pid);
+            tested++;
+            
+            if (result.supported) {
+                supported++;
+                outputDiv.innerHTML += `<div class="pid-test-supported">✓ PID ${customPid.pid}: Supported - ${result.value}</div>`;
+            } else {
+                outputDiv.innerHTML += `<div class="pid-test-unsupported">✗ PID ${customPid.pid}: Not Supported</div>`;
+            }
+            
+            progressDiv.textContent = `Testing... ${tested}/${this.additionalPids.length}`;
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        progressDiv.textContent = 'Test Complete!';
+        summaryDiv.textContent = `Results: ${supported}/${tested} custom PIDs supported (${((supported/tested)*100).toFixed(0)}%)`;
+    }
+
+    async testPID(pid) {
+        // Simulate PID testing (in real implementation, this would query OBD-II)
+        // For demo purposes, randomly determine support
+        await new Promise(resolve => setTimeout(resolve, 50)); // Simulate query delay
+        
+        // Mock: Standard PIDs are "supported", PID 2F and A6 are "not supported"
+        const unsupportedPids = ['2F', 'A6'];
+        const isSupported = !unsupportedPids.includes(pid.toUpperCase());
+        
+        let value = 'N/A';
+        if (isSupported) {
+            // Generate mock value based on PID
+            switch(pid.toUpperCase()) {
+                case '0C': value = '847 RPM'; break;
+                case '0D': value = '0 km/h'; break;
+                case '04': value = '23.5%'; break;
+                case '05': value = '89°C'; break;
+                case '0F': value = '24°C'; break;
+                case '11': value = '14.5%'; break;
+                default: value = '-- (mock data)';
+            }
+        }
+        
+        return { supported: isSupported, value: value };
+    }
+
+    // WiFi Network Configuration
+    toggleClientNetworkSettings(show) {
+        const clientSettings = document.getElementById('clientNetworkSettings');
+        clientSettings.style.display = show ? 'block' : 'none';
+    }
+
+    toggleStaticIPSettings(show) {
+        const staticSettings = document.getElementById('staticIPSettings');
+        staticSettings.style.display = show ? 'block' : 'none';
+    }
+
+    // Bluetooth Device Management
+    async scanBluetoothDevices() {
+        const scanButton = document.getElementById('scanBluetoothButton');
+        const scanButtonText = document.getElementById('btScanButtonText');
+        const refreshButton = document.getElementById('refreshBluetoothButton');
+        const deviceList = document.getElementById('bluetoothDeviceList');
+        const deviceSelect = document.getElementById('btDeviceSelect');
+
+        // Show scanning state
+        scanButton.disabled = true;
+        scanButtonText.textContent = 'Scanning...';
+
+        // Simulate Bluetooth scan (in real implementation, this would use Bluetooth API)
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Mock devices (replace with real Bluetooth scan results)
+        const mockDevices = [
+            { id: 'bt:01', name: 'iPhone 13 Pro', rssi: -45 },
+            { id: 'bt:02', name: 'Galaxy Buds', rssi: -65 },
+            { id: 'bt:03', name: 'iPad Air', rssi: -70 },
+            { id: 'bt:04', name: 'MacBook Pro', rssi: -55 },
+            { id: 'bt:05', name: 'Pixel 7', rssi: -80 }
+        ];
+
+        // Sort by signal strength (RSSI)
+        mockDevices.sort((a, b) => b.rssi - a.rssi);
+
+        // Populate dropdown
+        deviceSelect.innerHTML = mockDevices.map(device => 
+            `<option value="${device.id}">${device.name} (${device.rssi} dBm)</option>`
+        ).join('');
+
+        // Show device list and refresh button
+        deviceList.style.display = 'block';
+        refreshButton.style.display = 'inline-block';
+
+        // Reset scan button
+        scanButton.disabled = false;
+        scanButtonText.textContent = 'Scan for Devices';
+
+        // Enable pair button if device selected
+        document.getElementById('pairBluetoothButton').disabled = false;
+
+        console.log(`Found ${mockDevices.length} Bluetooth devices`);
+    }
+
+    async pairBluetoothDevice() {
+        const deviceSelect = document.getElementById('btDeviceSelect');
+        const selectedId = deviceSelect.value;
+        const selectedName = deviceSelect.options[deviceSelect.selectedIndex].text;
+
+        if (!selectedId) {
+            alert('Please select a device to pair');
+            return;
+        }
+
+        const pairButton = document.getElementById('pairBluetoothButton');
+        pairButton.disabled = true;
+        pairButton.textContent = 'Pairing...';
+
+        // Simulate pairing process
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Update paired device status
+        const pairedStatus = document.getElementById('pairedDeviceStatus');
+        const pairedDeviceName = document.getElementById('pairedDeviceName');
+        const connectionStatus = document.getElementById('btConnectionStatus');
+        const signalStrength = document.getElementById('btSignalStrength');
+
+        pairedDeviceName.textContent = selectedName.split(' (')[0]; // Remove RSSI from display
+        connectionStatus.textContent = 'Connected';
+        connectionStatus.className = 'status-badge status-connected';
+        signalStrength.textContent = selectedName.match(/\(.*\)/)[0]; // Extract RSSI
+
+        pairedStatus.style.display = 'block';
+
+        // Show unpair button, hide pair button
+        pairButton.style.display = 'none';
+        document.getElementById('unpairBluetoothButton').style.display = 'inline-block';
+
+        // Save to localStorage
+        localStorage.setItem('pairedBluetoothDevice', JSON.stringify({
+            id: selectedId,
+            name: selectedName.split(' (')[0]
+        }));
+
+        alert(`Successfully paired with ${selectedName.split(' (')[0]}`);
+    }
+
+    unpairBluetoothDevice() {
+        if (!confirm('Unpair this Bluetooth device?')) {
+            return;
+        }
+
+        // Hide paired status
+        document.getElementById('pairedDeviceStatus').style.display = 'none';
+
+        // Show pair button, hide unpair button
+        document.getElementById('pairBluetoothButton').style.display = 'inline-block';
+        document.getElementById('unpairBluetoothButton').style.display = 'none';
+        document.getElementById('pairBluetoothButton').textContent = 'Pair Device';
+
+        // Clear from localStorage
+        localStorage.removeItem('pairedBluetoothDevice');
+
+        alert('Device unpaired successfully');
+    }
 }
+
+
 
 // Initialize the application
 let app;
 document.addEventListener('DOMContentLoaded', () => {
-    app = new OpenPonyLogger();
+    // Check if gauge library is already loaded
+    if (window.gaugeLibraryLoaded && typeof RadialGauge !== 'undefined') {
+        console.log('Initializing OpenPonyLogger...');
+        app = new OpenPonyLogger();
+    } else {
+        // Wait for gauge library to load
+        console.log('Waiting for gauge library to load...');
+        window.addEventListener('gaugeLibraryReady', () => {
+            console.log('Initializing OpenPonyLogger...');
+            app = new OpenPonyLogger();
+        });
+        
+        // Fallback: If library doesn't load within 5 seconds, show error
+        setTimeout(() => {
+            if (!window.gaugeLibraryLoaded) {
+                console.error('❌ Gauge library failed to load!');
+                console.error('Download gauge.min.js from:');
+                console.error('https://github.com/Mikhus/canvas-gauges/releases/download/v2.1.7/gauge.min.js');
+                
+                // Show error message to user
+                document.body.innerHTML = `
+                    <div style="padding: 2rem; max-width: 800px; margin: 0 auto; font-family: sans-serif;">
+                        <h1 style="color: #f44336;">⚠️ Gauge Library Not Found</h1>
+                        <p style="font-size: 1.1rem; line-height: 1.6;">
+                            OpenPonyLogger requires the <strong>canvas-gauges</strong> library to display instruments.
+                        </p>
+                        <h2>Quick Fix:</h2>
+                        <ol style="font-size: 1.1rem; line-height: 1.8;">
+                            <li>Download <code>gauge.min.js</code> from:<br>
+                                <a href="https://github.com/Mikhus/canvas-gauges/releases/download/v2.1.7/gauge.min.js" 
+                                   style="color: #2196f3;">
+                                    https://github.com/Mikhus/canvas-gauges/releases/download/v2.1.7/gauge.min.js
+                                </a>
+                            </li>
+                            <li>Place it in the same directory as <code>index.html</code></li>
+                            <li>Refresh this page (Ctrl+F5)</li>
+                        </ol>
+                        <h2>Or Use Helper Script:</h2>
+                        <pre style="background: #1a1a1a; color: #4caf50; padding: 1rem; border-radius: 4px;">
+# Linux/Mac
+./download-gauge-library.sh
+
+# Windows
+download-gauge-library.bat</pre>
+                        <p style="margin-top: 2rem; padding: 1rem; background: #fff3cd; border-left: 4px solid #ffc107;">
+                            <strong>Note:</strong> This is required for offline operation at the track!
+                            See <code>OFFLINE_SETUP.md</code> for details.
+                        </p>
+                    </div>
+                `;
+            }
+        }, 5000);
+    }
 });
