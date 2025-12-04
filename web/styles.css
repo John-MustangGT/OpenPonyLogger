@@ -965,3 +965,25 @@ input[type="text"]::placeholder {
 input[type="text"]:focus::placeholder {
     opacity: 0.4;
 }
+
+/* Logo Styling */
+.logo-container {
+    text-align: center;
+    margin-bottom: 1rem;
+    padding: 1rem 0;
+}
+
+.logo-full {
+    max-width: 300px;
+    width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Favicon and icon sizes handled by browser */
+@media (max-width: 768px) {
+    .logo-full {
+        max-width: 200px;
+    }
+}
