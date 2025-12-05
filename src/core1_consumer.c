@@ -75,7 +75,7 @@ static uint32_t g_file_count = 0;
 static void generate_log_filename(char *filename, size_t max_len) {
     // TODO: Use RTC time if available, otherwise use uptime-based name
     // For now, use a simple counter-based naming
-    snprintf(filename, max_len, "log_%04u.opl", g_file_count);
+    snprintf(filename, max_len, "log_%04lu.opl", g_file_count);
 }
 
 /**
@@ -176,7 +176,7 @@ static bool flush_log_buffer(void) {
     }
     
     if (bytes_written != g_log_buffer_used) {
-        printf("[Core 1] Partial write: %u of %u bytes\n", bytes_written, g_log_buffer_used);
+        printf("[Core 1] Partial write: %u of %lu bytes\n", bytes_written, g_log_buffer_used);
     }
     
     g_bytes_written += bytes_written;
