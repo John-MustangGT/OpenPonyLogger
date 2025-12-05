@@ -8,10 +8,10 @@ OpenPonyLogger is an open-source automotive telemetry system designed for track 
 
 ### Hardware Platform
 - **Microcontroller:** Raspberry Pi Pico 2W (RP2350)
-- **GPS Module:** NEO-6M (development) / NEO-8M (production target)
-- **Accelerometer/Gyro:** MPU6050 (I2C)
+- **GPS Module:** ATGM336H (development) / NEO-8M (production target)
+- **Accelerometer/Gyro:** LIS3DH (I2C)
 - **OBD-II Interface:** VGate iCar Pro ELM327 (Bluetooth LE) - V1
-- **Storage:** MicroSD card via SPI interface
+- **Storage:** MicroSD card PiCownbell Adatalogger 
 - **Connectivity:** WiFi 802.11n (built-in AP mode)
 - **CAN Interface:** MCP2515 CAN controller module - V2+
 
@@ -19,7 +19,7 @@ OpenPonyLogger is an open-source automotive telemetry system designed for track 
 
 **Core 0 - Data Collection (Producer)**
 - GPS UART reader with DMA-backed ring buffer
-- MPU6050 I2C polling at 10Hz target
+- LIS3DH I2C polling at 10Hz target
 - BLE/OBD-II connection manager and PID requests
 - Microsecond timestamp capture (`time_us_64()`)
 - Writes timestamped messages to lock-free ring buffer
@@ -108,14 +108,14 @@ Examples: `20250315_143027.opl`
 ### Network Configuration
 - **Mode:** WiFi Access Point (AP mode)
 - **SSID:** OpenPonyTelemetry
-- **IP Address:** 192.168.4.1 (standard AP default)
+- **IP Address:** 192.168.25.1 (standard AP default)
 - **Purpose:** Configuration, live monitoring, data download
 
 ### Real-Time Dashboard
 
 **Technology Stack:**
-- **Framework:** Bootstrap 5 (responsive layout)
-- **Visualization:** Plotly.js (gauges and real-time charts)
+- **Framework:** CSS Grid layout
+- **Visualization:** https://cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.7/all/gauge.min.js
 - **Communication:** AJAX polling (250-500ms intervals)
 - **Embedding:** All assets compiled into firmware (no internet required)
 
@@ -212,8 +212,8 @@ POST /delete            - Delete selected sessions
 
 **Core Functionality:**
 - ✅ Dual-core data acquisition and logging
-- ✅ GPS (NEO-6M/8M) at 10Hz
-- ✅ MPU6050 accelerometer/gyro at 10Hz
+- ✅ GPS at 10Hz
+- ✅  accelerometer/gyro at 10Hz
 - ✅ OBD-II via VGate ELM327 Bluetooth (~1-5Hz)
 - ✅ Binary message format with microsecond timestamps
 - ✅ SD card circular logging with 5-minute files
@@ -221,7 +221,6 @@ POST /delete            - Delete selected sessions
 
 **User Interface:**
 - ✅ WiFi Access Point mode
-- ✅ Bootstrap + Plotly.js real-time dashboard
 - ✅ Live telemetry display (gauges and graphs)
 - ✅ Session list with download capability
 - ✅ Batch download as ZIP
@@ -325,7 +324,7 @@ POST /delete            - Delete selected sessions
 
 **Core 0 Timing:**
 - GPS UART: DMA-driven, minimal CPU overhead
-- MPU6050 I2C: ~1ms per read at 400kHz
+- LIS3DH I2C: ~1ms per read at 400kHz
 - BLE stack: Asynchronous, event-driven
 - Ring buffer writes: <10µs per message
 
@@ -369,13 +368,12 @@ POST /delete            - Delete selected sessions
 | Component | Part Number/Description | Quantity | Est. Cost | Status |
 |-----------|------------------------|----------|-----------|--------|
 | Raspberry Pi Pico 2W | RP2350 with WiFi | 1 | $7 | ✅ Have |
-| GPS Module | NEO-6M (dev) / NEO-8M (prod) | 1 | $10-15 | ✅ Have (NEO-6M) |
-| Accelerometer | MPU6050 breakout | 1 | $5 | ⏳ Order |
+| PiCowBell Adalogger | SD Card Reader w/ RTC | 1 | $12 | Have |
+| GPS Module | ATGM336H | 1 | $10-15 | On Order |
+| Accelerometer | LIS3DH breakout | 1 | $5 | ⏳ Order |
 | BLE OBD-II | VGate iCar Pro | 1 | $25 | ✅ Have |
 | SD Card Module | MicroSD SPI breakout | 1 | $5 | ⏳ Order |
 | MicroSD Card | 16-32GB, FAT32 | 1+ | $10 | ✅ Have (reformatted) |
-| Buck Converter | LM2596 12V→5V module | 1 | $2 | ⏳ Order |
-| Cat5 Cable | Ethernet cable (4-6 feet) | 1 | $3 | TBD |
 | Enclosure | 3D printed housing | 1 | Filament | TBD Design |
 | Velcro Strips | Industrial strength | 1 set | $5 | TBD |
 
@@ -401,7 +399,7 @@ POST /delete            - Delete selected sessions
 ### Build Instructions
 ```bash
 # Clone repository
-git clone https://github.com/[username]/OpenPonyLogger.git
+git clone https://github.com/John-MustangGT/OpenPonyLogger.git
 cd OpenPonyLogger
 
 # Create build directory
@@ -423,7 +421,7 @@ cp OpenPonyLogger.uf2 /media/[user]/RPI-RP2/
 1. SD card mount and basic file I/O
 2. Ring buffer implementation and inter-core communication
 3. GPS UART reading and NMEA parsing
-4. MPU6050 I2C communication
+4. LIS3DH I2C communication
 5. Basic data logging to SD card
 
 **Phase 2: Connectivity**
@@ -461,7 +459,7 @@ cp OpenPonyLogger.uf2 /media/[user]/RPI-RP2/
 - SD card write performance
 - Message serialization/deserialization
 - GPS NMEA parser validation
-- MPU6050 calibration
+- LIS3DH calibration
 
 ### Integration Testing
 - Multi-sensor simultaneous operation
@@ -510,11 +508,11 @@ This is an open-source project. Contributions welcome:
 
 ## License
 
-[To be determined - suggest MIT or GPLv3]
+MIT 
 
 ## Project Repository
 
-GitHub: [To be created]
+GitHub: https://github.com/John-MustangGT/OpenPonyLogger
 
 ## Credits
 
