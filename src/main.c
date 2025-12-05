@@ -57,7 +57,7 @@ static bool init_hardware(void) {
     
     // Initialize ring buffer
     ring_buffer_init(&g_telemetry_buffer);
-    printf("Ring buffer initialized: %u bytes\n", g_telemetry_buffer.meta.capacity);
+    printf("Ring buffer initialized: %lu bytes\n", g_telemetry_buffer.meta.capacity);
     
     // TODO: Initialize hardware interfaces
     // - GPS UART
@@ -86,8 +86,8 @@ static void system_monitor_task(void) {
                              &overflow, &dropped_count);
         
         printf("\n=== System Status ===\n");
-        printf("Ring Buffer: %u bytes used, %u bytes free\n", bytes_used, bytes_free);
-        printf("Messages dropped: %u\n", dropped_count);
+        printf("Ring Buffer: %lu bytes used, %lu bytes free\n", bytes_used, bytes_free);
+        printf("Messages dropped: %lu\n", dropped_count);
         if (overflow) {
             printf("WARNING: Ring buffer overflow detected!\n");
         }
@@ -96,7 +96,7 @@ static void system_monitor_task(void) {
         extern void core0_get_stats(uint32_t *gps, uint32_t *accel, uint32_t *obd);
         uint32_t gps_count, accel_count, obd_count;
         core0_get_stats(&gps_count, &accel_count, &obd_count);
-        printf("Core 0 - GPS: %u, Accel: %u, OBD: %u messages\n", 
+        printf("Core 0 - GPS: %lu, Accel: %lu, OBD: %lu messages\n", 
                gps_count, accel_count, obd_count);
         
         // Get Core 1 statistics
@@ -105,7 +105,7 @@ static void system_monitor_task(void) {
         uint32_t processed, written, buffer_used;
         bool sd_ok;
         core1_get_stats(&processed, &written, &buffer_used, &sd_ok);
-        printf("Core 1 - Processed: %u, Written: %u bytes, SD: %s\n",
+        printf("Core 1 - Processed: %lu, Written: %lu bytes, SD: %s\n",
                processed, written, sd_ok ? "OK" : "ERROR");
         printf("==================\n\n");
         

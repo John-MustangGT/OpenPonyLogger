@@ -12,12 +12,21 @@ set(CMAKE_CXX_STANDARD 17)
 
 # Initialize Pico SDK
 pico_sdk_init()
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../lib/fatfs/src build)
 
 # Main executable
 add_executable(OpenPonyLogger
     main.c
     core0_producer.c
     core1_consumer.c
+    hw_config.c        # Add this
+)
+
+target_include_directories(OpenPonyLogger PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../lib/fatfs/src/ff15/source
+    ${CMAKE_CURRENT_LIST_DIR}/../lib/fatfs/src/include
+    ${CMAKE_CURRENT_LIST_DIR}/../lib/fatfs/src/sd_driver
+    ${CMAKE_CURRENT_LIST_DIR}/../lib/fatfs/src/sd_driver/SPI
 )
 
 # Create map/bin/hex/uf2 files
@@ -33,7 +42,9 @@ target_link_libraries(OpenPonyLogger
     hardware_uart        # UART for GPS
     hardware_i2c         # I2C for accelerometer
     hardware_spi         # SPI for SD card
+    hardware_dma              # Add this - required by FatFS
     pico_cyw43_arch_none # WiFi support (CYW43 chip on Pico W)
+    no-OS-FatFS-SD-SDIO-SPI-RPi-Pico  # The actual library name
 )
 
 # Enable USB serial output for debugging
@@ -58,11 +69,11 @@ target_compile_definitions(OpenPonyLogger PRIVATE
 )
 
 # Memory layout
-pico_set_binary_info(OpenPonyLogger
-    VERSION_STRING "1.0.0"
-    DESCRIPTION "Open-source automotive telemetry system"
-    URL "https://github.com/John-MustangGT/OpenPonyLogger"
-)
+#pico_set_binary_info(OpenPonyLogger
+#    VERSION_STRING "1.0.0"
+#    DESCRIPTION "Open-source automotive telemetry system"
+#    URL "https://github.com/John-MustangGT/OpenPonyLogger"
+#)
 
 # TODO: Add FatFS library for SD card support
 # TODO: Add lwIP library for WiFi/HTTP server
