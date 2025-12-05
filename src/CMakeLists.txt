@@ -27,6 +27,7 @@ pico_add_extra_outputs(OpenPonyLogger)
 target_link_libraries(OpenPonyLogger
     pico_stdlib          # Standard library (GPIO, timers, etc)
     pico_multicore       # Multicore support
+    pico_binary_info     # ADD THIS LINE - Provides pico_set_binary_info
     hardware_timer       # Hardware timer access
     hardware_gpio        # GPIO access
     hardware_uart        # UART for GPS
