@@ -16,11 +16,19 @@ void StorageReporter::init(unsigned long baud_rate) {
     // Extra wait for USB JTAG to be ready on ESP32-S3
     delay(500);
     
+    // Configure ESP-IDF logging to use USB Serial/JTAG
+    esp_log_level_set("*", ESP_LOG_INFO);
+    
     // Additional delay to ensure USB is ready
     uint32_t start = millis();
     while (!Serial && (millis() - start) < 1000) {
         delay(50);
     }
+    
+    // Send test message to verify serial is working
+    Serial.println("\n\n*** Serial Port Active ***");
+    Serial.flush();
+    ESP_LOGI(TAG, "ESP-IDF Logging initialized");
 }
 
 void StorageReporter::report_storage_write(const gps_data_t& gps, const accel_data_t& accel,
