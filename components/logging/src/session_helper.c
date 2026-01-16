@@ -47,6 +47,9 @@
 // Maximum number of session slots (rotating buffer)
 #define MAX_SESSION_SLOTS 8
 
+// Flash sector size for erase operations (typically 4KB for ESP32)
+#define FLASH_SECTOR_SIZE 4096
+
 /**
  * @brief Generate a RFC4122 UUIDv4 (random UUID)
  * 
@@ -72,6 +75,9 @@ static void generate_uuidv4(uint8_t uuid_out[16]) {
  * @return Number of bytes converted
  */
 static int hex_to_binary(const char* hex_str, uint8_t* bin_out, size_t max_bytes) {
+    if (!hex_str) {
+        return 0;
+    }
     size_t len = strlen(hex_str);
     size_t bin_len = (len + 1) / 2;
     if (bin_len > max_bytes) {
@@ -184,7 +190,7 @@ esp_err_t session_helper_write_session_start_to_partition(
     
     // Erase the sector if needed (typically 4KB aligned)
     // Note: In production, you may want to check if erase is needed
-    esp_err_t err = esp_partition_erase_range(partition, offset, 4096);
+    esp_err_t err = esp_partition_erase_range(partition, offset, FLASH_SECTOR_SIZE);
     if (err != ESP_OK) {
         return err;
     }

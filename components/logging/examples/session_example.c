@@ -6,6 +6,7 @@
  */
 
 #include <stdio.h>
+#include <inttypes.h>
 #include "session_helper.h"
 #include "session_header.h"
 
@@ -21,9 +22,9 @@ void app_main(void) {
     
     if (success) {
         printf("Session created successfully!\n");
-        printf("  Magic: 0x%08X\n", session.magic);
+        printf("  Magic: 0x%08" PRIX32 "\n", session.magic);
         printf("  Version: 0x%02X\n", session.version);
-        printf("  Startup Counter: %lu\n", (unsigned long)session.startup_counter);
+        printf("  Startup Counter: %" PRIu32 "\n", session.startup_counter);
         printf("  ESP Time at Start: %lld us\n", (long long)session.esp_time_at_start);
         printf("  MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
                session.mac_addr[0], session.mac_addr[1], session.mac_addr[2],
@@ -33,7 +34,7 @@ void app_main(void) {
             printf("%02X", session.fw_sha[i]);
         }
         printf("\n");
-        printf("  CRC32: 0x%08X\n", session.crc32);
+        printf("  CRC32: 0x%08" PRIX32 "\n", session.crc32);
         
         // Get next NVS slot index
         int slot_idx = session_helper_get_next_slot_index();
