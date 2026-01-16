@@ -179,7 +179,7 @@ void setup() {
     ESP_LOGI(TAG, "▶ Starting Status Monitor Thread (Core 0)...");
     
     // Create and start status monitor on core 0
-    status_monitor = new StatusMonitor(rt_logger, 10000);  // Report every 10 seconds
+    status_monitor = new StatusMonitor(rt_logger, 1000);  // Report every 1 second for debugging
     if (!status_monitor->start()) {
         ESP_LOGE(TAG, "✗ ERROR: Failed to start status monitor thread");
         ESP_LOGE(TAG, "System halted.");
