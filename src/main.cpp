@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_log.h>
 #include "sensor_hal.h"
 #include "pa1010d_driver.h"
 #include "icm20948_driver.h"
@@ -8,6 +9,8 @@
 #include "rt_logger_thread.h"
 #include "storage_reporter.h"
 #include "status_monitor.h"
+
+static const char* TAG = "MAIN";
 
 // Hardware configuration
 #define GPS_TX_PIN          17
@@ -137,24 +140,25 @@ void setup() {
         delay(100);
         Serial.print(".");
     }
+    Serial.println("");
     
-    Serial.println("\n\n╔═══════════════════════════════════════════════════════════╗");
-    Serial.println("║        OpenPonyLogger - Real-Time Data Logger              ║");
-    Serial.println("║              ESP32-S3 Feather TFT                          ║");
-    Serial.println("╚═══════════════════════════════════════════════════════════╝\n");
+    ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║        OpenPonyLogger - Real-Time Data Logger              ║");
+    ESP_LOGI(TAG, "║              ESP32-S3 Feather TFT                          ║");
+    ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════════════╝");
     
-    Serial.println("▶ Initializing hardware...");
+    ESP_LOGI(TAG, "▶ Initializing hardware...");
     
     // Initialize sensors
     if (!init_sensors()) {
-        reporter.print_debug("\n✗ FATAL ERROR: Sensor initialization failed!");
-        Serial.println("  System halted.\n");
+        ESP_LOGE(TAG, "✗ FATAL ERROR: Sensor initialization failed!");
+        ESP_LOGE(TAG, "System halted.");
         while (1) {
             delay(1000);
         }
     }
     
-    Serial.println("\n▶ Starting Real-Time Logger Thread (Core 1)...");
+    ESP_LOGI(TAG, "▶ Starting Real-Time Logger Thread (Core 1)...");
     
     // Create and start the RT logger thread on core 1
     rt_logger = new RTLoggerThread(&sensor_manager, 100);  // 100ms update rate
@@ -163,32 +167,32 @@ void setup() {
     rt_logger->set_storage_write_callback(on_storage_write);
     
     if (!rt_logger->start()) {
-        reporter.print_debug("✗ ERROR: Failed to start RT logger thread");
-        Serial.println("  System halted.\n");
+        ESP_LOGE(TAG, "✗ ERROR: Failed to start RT logger thread");
+        ESP_LOGE(TAG, "System halted.");
         while (1) {
             delay(1000);
         }
     }
     
-    reporter.print_debug("✓ RT Logger thread started");
+    ESP_LOGI(TAG, "✓ RT Logger thread started");
     
-    Serial.println("\n▶ Starting Status Monitor Thread (Core 0)...");
+    ESP_LOGI(TAG, "▶ Starting Status Monitor Thread (Core 0)...");
     
     // Create and start status monitor on core 0
     status_monitor = new StatusMonitor(rt_logger, 10000);  // Report every 10 seconds
     if (!status_monitor->start()) {
-        reporter.print_debug("✗ ERROR: Failed to start status monitor thread");
-        Serial.println("  System halted.\n");
+        ESP_LOGE(TAG, "✗ ERROR: Failed to start status monitor thread");
+        ESP_LOGE(TAG, "System halted.");
         while (1) {
             delay(1000);
         }
     }
     
-    reporter.print_debug("✓ Status monitor started");
+    ESP_LOGI(TAG, "✓ Status monitor started");
     
-    Serial.println("\n╔═══════════════════════════════════════════════════════════╗");
-    Serial.println("║              ✓ SYSTEM READY - LOGGING ACTIVE              ║");
-    Serial.println("╚═══════════════════════════════════════════════════════════╝\n");
+    ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║              ✓ SYSTEM READY - LOGGING ACTIVE              ║");
+    ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════════════╝");
 }
 
 /**

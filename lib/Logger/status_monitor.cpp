@@ -1,6 +1,9 @@
 #include "status_monitor.h"
 #include <Arduino.h>
 #include <cstdio>
+#include <esp_log.h>
+
+static const char* TAG = "STATUS";
 
 StatusMonitor::StatusMonitor(RTLoggerThread* rt_logger, uint32_t report_interval_ms)
     : m_rt_logger(rt_logger),
@@ -58,10 +61,10 @@ void StatusMonitor::print_status_now() {
     uint32_t uptime_ms = millis();
     uint32_t uptime_sec = uptime_ms / 1000;
     
-    Serial.println("\n╔═══════════════════════════════════════════════════════════╗");
-    Serial.printf("║ STATUS REPORT - Uptime: %u:%02u:%02u (writes: %u)           ║\n",
-                  uptime_sec / 3600, (uptime_sec / 60) % 60, uptime_sec % 60, m_write_count);
-    Serial.println("╠═══════════════════════════════════════════════════════════╣");
+    ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║ STATUS REPORT - Uptime: %u:%02u:%02u (writes: %u)", 
+             uptime_sec / 3600, (uptime_sec / 60) % 60, uptime_sec % 60, m_write_count);
+    ESP_LOGI(TAG, "╠═══════════════════════════════════════════════════════════╣");
     
     if (m_rt_logger != nullptr) {
         // Get latest sensor data
@@ -73,36 +76,35 @@ void StatusMonitor::print_status_now() {
         uint32_t sample_count = m_rt_logger->get_sample_count();
         
         // GPS Status
-        Serial.print("║ GPS: ");
         if (gps.valid) {
-            Serial.printf("VALID - Lat:%.6f Lon:%.6f Alt:%.1fm Sats:%d\n",
-                         gps.latitude, gps.longitude, gps.altitude, gps.satellites);
+            ESP_LOGI(TAG, "║ GPS: VALID - Lat:%.6f Lon:%.6f Alt:%.1fm Sats:%d",
+                     gps.latitude, gps.longitude, gps.altitude, gps.satellites);
         } else {
-            Serial.println("NO FIX                                           ");
+            ESP_LOGW(TAG, "║ GPS: NO FIX");
         }
-        Serial.println("║");
+        ESP_LOGI(TAG, "║");
         
         // IMU Status
-        Serial.printf("║ Accel: X=%.2fg Y=%.2fg Z=%.2fg                             \n",
-                     accel.x, accel.y, accel.z);
-        Serial.printf("║ Gyro:  X=%.1fdps Y=%.1fdps Z=%.1fdps                       \n",
-                     gyro.x, gyro.y, gyro.z);
-        Serial.printf("║ Compass: X=%.1fuT Y=%.1fuT Z=%.1fuT                       \n",
-                     compass.x, compass.y, compass.z);
-        Serial.println("║");
+        ESP_LOGI(TAG, "║ Accel: X=%.2fg Y=%.2fg Z=%.2fg",
+                 accel.x, accel.y, accel.z);
+        ESP_LOGI(TAG, "║ Gyro:  X=%.1fdps Y=%.1fdps Z=%.1fdps",
+                 gyro.x, gyro.y, gyro.z);
+        ESP_LOGI(TAG, "║ Compass: X=%.1fuT Y=%.1fuT Z=%.1fuT",
+                 compass.x, compass.y, compass.z);
+        ESP_LOGI(TAG, "║");
         
         // Battery Status
-        Serial.printf("║ Battery: %.1f%% SOC | %.2fV | %d mA | %.1f°C           \n",
-                     battery.state_of_charge, battery.voltage, (int)battery.current, 
-                     battery.temperature / 100.0f);
-        Serial.println("║");
+        ESP_LOGI(TAG, "║ Battery: %.1f%% SOC | %.2fV | %d mA | %.1f°C",
+                 battery.state_of_charge, battery.voltage, (int)battery.current, 
+                 battery.temperature / 100.0f);
+        ESP_LOGI(TAG, "║");
         
         // Sample count
-        Serial.printf("║ Samples logged: %u (%.1f samples/sec)                    \n",
-                     sample_count, sample_count > 0 ? (float)sample_count / (uptime_sec > 0 ? uptime_sec : 1) : 0.0f);
+        ESP_LOGI(TAG, "║ Samples logged: %u (%.1f samples/sec)",
+                 sample_count, sample_count > 0 ? (float)sample_count / (uptime_sec > 0 ? uptime_sec : 1) : 0.0f);
     }
     
-    Serial.println("╚═══════════════════════════════════════════════════════════╝\n");
+    ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════════════╝");
 }
 
 void StatusMonitor::task_wrapper(void* arg) {

@@ -3,7 +3,8 @@
         "mv": true,
         "mkdir": true,
         "cp": true,
-        "pkill": true
+        "pkill": true,
+        "timeout": true
     },
     "platformio-ide.openOnStartup": false,
     "platformio-ide.customPATH": "",
