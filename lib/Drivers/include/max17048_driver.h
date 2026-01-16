@@ -41,8 +41,6 @@ private:
     // Device-specific functions
     bool read_voltage();
     bool read_soc();
-    bool read_current();
-    bool read_temperature();
     
     // Helper functions
     uint16_t combine_bytes(uint8_t high, uint8_t low) const;

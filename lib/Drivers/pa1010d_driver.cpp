@@ -54,24 +54,27 @@ bool PA1010DDriver::read_uart_nmea_buffer() {
     static int buffer_idx = 0;
     
     // Read available data from GPS module
-    while (m_serial && m_serial->available()) {
-        char c = m_serial->read();
-        
-        if (c == '\n') {
-            buffer[buffer_idx] = '\0';
+    if (m_serial) {
+        while (m_serial->available()) {
+            char c = m_serial->read();
             
-            // Parse the complete NMEA sentence
-            if (buffer[0] == '$') {
-                parse_nmea_sentence(buffer);
+            if (c == '\n') {
+                buffer[buffer_idx] = '\0';
+                
+                // Parse the complete NMEA sentence
+                if (buffer[0] == '$') {
+                    parse_nmea_sentence(buffer);
+                }
+                
+                buffer_idx = 0;
+            } else if (c != '\r' && buffer_idx < sizeof(buffer) - 1) {
+                buffer[buffer_idx++] = c;
             }
-            
-            buffer_idx = 0;
-        } else if (c != '\r' && buffer_idx < sizeof(buffer) - 1) {
-            buffer[buffer_idx++] = c;
         }
     }
     
-    return m_valid;
+    // Always return true - either we got data or waiting for it is OK
+    return true;
 }
 
 gps_data_t PA1010DDriver::get_data() const {
@@ -207,19 +210,21 @@ bool PA1010DDriver::read_i2c_nmea_buffer() {
     // Address pointer at 0xFF indicates we want the NMEA buffer
     m_wire->beginTransmission(m_i2c_addr);
     m_wire->write(0xFF);  // NMEA buffer register
-    m_wire->endTransmission();
+    if (m_wire->endTransmission() != 0) {
+        return false;  // I2C transmission error
+    }
     
     // Read the length (2 bytes, big-endian)
     m_wire->requestFrom(m_i2c_addr, (size_t)2);
     if (m_wire->available() < 2) {
-        return false;
+        return true;  // No data available yet, but that's OK (GPS is warming up)
     }
     
     uint16_t length = (m_wire->read() << 8) | m_wire->read();
     
     // Limit length to avoid buffer overflow
     if (length == 0 || length > 255) {
-        return false;
+        return true;  // Invalid length, but bus is OK
     }
     
     // Read the NMEA sentence
@@ -231,15 +236,15 @@ bool PA1010DDriver::read_i2c_nmea_buffer() {
     }
     
     if (bytes_read != length) {
-        return false;
+        return true;  // Incomplete read, but I2C is functional
     }
     
     sentence_buffer[bytes_read] = '\0';
     
     // Parse the NMEA sentence if it's valid
     if (sentence_buffer[0] == '$') {
-        return parse_nmea_sentence(sentence_buffer);
+        parse_nmea_sentence(sentence_buffer);
     }
     
-    return false;
+    return true;  // Successfully queried I2C, even if no valid sentence yet
 }

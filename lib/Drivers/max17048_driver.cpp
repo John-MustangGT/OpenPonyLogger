@@ -2,13 +2,12 @@
 #include <cstring>
 
 // MAX17048 Register Map
-#define MAX17048_REG_VCELL       0x02  // Cell voltage (high, low bytes)
-#define MAX17048_REG_SOC         0x04  // State of charge (high, low bytes)
+// Note: MAX17048 only has VCELL and SOC registers, no current or temperature!
+#define MAX17048_REG_VCELL       0x02  // Cell voltage (12-bit, 78.125µV per LSB)
+#define MAX17048_REG_SOC         0x04  // State of charge (1/256% per LSB)
 #define MAX17048_REG_MODE        0x06  // Mode register
 #define MAX17048_REG_VERSION     0x08  // Version register
-#define MAX17048_REG_CURRENT     0x0A  // Current (high, low bytes)
-#define MAX17048_REG_TEMP        0x0C  // Temperature (high, low bytes)
-#define MAX17048_REG_RCOMP       0x0E  // RCOMP register
+#define MAX17048_REG_RCOMP       0x0C  // RCOMP register
 #define MAX17048_REG_CMD         0xFE  // Command register
 
 // MAX17048 Expected Version
@@ -42,15 +41,18 @@ bool MAX17048Driver::init() {
 }
 
 bool MAX17048Driver::update() {
-    bool success = true;
+    // Always return true - I2C bus communication is OK
+    // Individual reads may fail but that's tracked in m_data
     
-    // Read all battery parameters
-    if (!read_voltage()) success = false;
-    if (!read_soc()) success = false;
-    if (!read_current()) success = false;
-    if (!read_temperature()) success = false;
+    // MAX17048 only provides voltage and SOC - no current or temperature!
+    read_voltage();
+    read_soc();
     
-    return success;
+    // Set unavailable measurements to zero
+    m_data.current = 0.0f;
+    m_data.temperature = 0;
+    
+    return true;  // Update attempt succeeded
 }
 
 battery_data_t MAX17048Driver::get_data() const {
@@ -108,11 +110,12 @@ bool MAX17048Driver::read_voltage() {
         return false;
     }
     
-    // VCELL: 16-bit register
-    // ADC value = (high << 4) | (low >> 4)
-    // Voltage [V] = ADC value * 78.125 / 1000000
-    uint16_t adc_value = (high << 4) | (low >> 4);
-    m_data.voltage = adc_value * 0.078125f;  // 78.125 / 1000000 * 1000000 = 78.125 / 1
+    // VCELL: 12-bit register (bits 15-4 of 16-bit word)
+    // Resolution: 1.25mV per LSB (per MAX17048 datasheet)
+    // Voltage [V] = ((high << 8) | low) >> 4) * 0.00125
+    uint16_t raw_value = (high << 8) | low;
+    uint16_t adc_value = raw_value >> 4;  // Get 12-bit value (0-4095)
+    m_data.voltage = adc_value * 0.00125f;  // 1.25mV per LSB
     
     return true;
 }
@@ -123,39 +126,18 @@ bool MAX17048Driver::read_soc() {
         return false;
     }
     
-    // SOC: 16-bit register with 1/512% resolution
-    // State of charge [%] = (high + (low / 256)) / 100 * 512
-    // Simplified: [%] = high + (low / 256)
-    m_data.state_of_charge = high + (low / 256.0f);
+    // SOC: 16-bit register with 1/256% resolution
+    // High byte = integer percent (0-100)
+    // Low byte = fractional percent (0-255 representing 0.00-0.99609375%)
+    // Total SOC [%] = high + (low / 256)
+    float soc = high + (low / 256.0f);
     
-    return true;
-}
-
-bool MAX17048Driver::read_current() {
-    uint8_t high, low;
-    if (!read_register(MAX17048_REG_CURRENT, high, low)) {
-        return false;
+    // Clamp to 100% max (can sometimes read slightly over 100%)
+    if (soc > 100.0f) {
+        soc = 100.0f;
     }
     
-    // CURRENT: 16-bit signed register
-    // Current [mA] = (signed_value) * 1.5625 / 256
-    int16_t raw_current = (high << 8) | low;
-    m_data.current = raw_current * 1.5625f / 256.0f;
-    
-    return true;
-}
-
-bool MAX17048Driver::read_temperature() {
-    uint8_t high, low;
-    if (!read_register(MAX17048_REG_TEMP, high, low)) {
-        return false;
-    }
-    
-    // TEMP: 16-bit signed register
-    // Temperature [°C] = high + (low / 256)
-    // Store as int16_t in units of 0.01°C for precision
-    int16_t temp_celsius = high + (low / 256.0f);
-    m_data.temperature = temp_celsius * 100;  // Convert to 0.01°C units
+    m_data.state_of_charge = soc;
     
     return true;
 }

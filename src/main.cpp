@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <esp_log.h>
 #include "sensor_hal.h"
 #include "pa1010d_driver.h"
 #include "icm20948_driver.h"
@@ -9,14 +8,14 @@
 #include "rt_logger_thread.h"
 #include "storage_reporter.h"
 #include "status_monitor.h"
-
-static const char* TAG = "MAIN";
+#include "st7789_display.h"
 
 // Hardware configuration
 #define GPS_TX_PIN          17
 #define GPS_RX_PIN          16
-#define I2C_SDA_PIN         21
-#define I2C_SCL_PIN         22
+#define I2C_SDA_PIN         3   // ESP32-S3 Feather TFT STEMMA QT SDA
+#define I2C_SCL_PIN         4   // ESP32-S3 Feather TFT STEMMA QT SCL
+#define I2C_PWR_PIN         7   // Power enable for I2C/STEMMA (hold HIGH)
 #define GPS_I2C_ADDR        0x10
 #define IMU_I2C_ADDR        0x69
 #define BATTERY_I2C_ADDR    0x36
@@ -24,6 +23,9 @@ static const char* TAG = "MAIN";
 // GPS Communication Mode Selection
 // Set to true for I2C (default), false for UART
 #define GPS_USE_I2C         true
+
+// Logging tag
+static const char* TAG = "MAIN";
 
 // Global instances
 SensorManager sensor_manager;
@@ -62,6 +64,14 @@ void on_storage_write(const gps_data_t& gps, const accel_data_t& accel,
  * @brief Initialize sensors
  */
 bool init_sensors() {
+    reporter.printf_debug("  → Powering I2C bus (GPIO%d)...", I2C_PWR_PIN);
+    
+    // Enable I2C power on ESP32-S3 Feather TFT
+    pinMode(I2C_PWR_PIN, OUTPUT);
+    digitalWrite(I2C_PWR_PIN, HIGH);
+    delay(50);  // Allow power to stabilize
+    reporter.print_debug("  ✓ I2C power enabled");
+    
     reporter.printf_debug("  → Initializing I2C (SDA: GPIO%d, SCL: GPIO%d)...", I2C_SDA_PIN, I2C_SCL_PIN);
     
     // Initialize I2C for IMU and GPS (if using I2C)
@@ -157,54 +167,109 @@ void setup() {
         Serial.print(".");
     }
     Serial.println("");
+    Serial.println("After dots - about to print header");
+    Serial.flush();
     
-    ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║        OpenPonyLogger - Real-Time Data Logger              ║");
-    ESP_LOGI(TAG, "║              ESP32-S3 Feather TFT                          ║");
-    ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════════════╝");
+    Serial.println("╔═══════════════════════════════════════════════════════════╗");
+    Serial.println("║        OpenPonyLogger - Real-Time Data Logger              ║");
+    Serial.println("║              ESP32-S3 Feather TFT                          ║");
+    Serial.println("╚═══════════════════════════════════════════════════════════╝");
+    Serial.flush();
     
-    ESP_LOGI(TAG, "▶ Initializing hardware...");
+    Serial.println("▶ Initializing hardware...");
+    Serial.flush();
+    
+    // Initialize display
+    Serial.println("▶ Initializing ST7789 Display...");
+    Serial.flush();
+    if (!ST7789Display::init()) {
+        Serial.println("⚠ WARNING: Display initialization failed, continuing with serial output only");
+        Serial.flush();
+    } else {
+        Serial.println("✓ Display initialized");
+        Serial.flush();
+    }
+    
+    // Initialize NeoPixel status indicator
+    Serial.println("▶ Initializing NeoPixel Status Indicator...");
+    Serial.flush();
+    if (!NeoPixelStatus::init()) {
+        Serial.println("⚠ WARNING: NeoPixel initialization failed");
+        Serial.flush();
+    } else {
+        Serial.println("✓ NeoPixel initialized (Booting - Red)");
+        Serial.flush();
+    }
     
     // Initialize sensors
+    Serial.println("About to call init_sensors()");
+    Serial.flush();
     if (!init_sensors()) {
-        ESP_LOGE(TAG, "✗ FATAL ERROR: Sensor initialization failed!");
-        ESP_LOGE(TAG, "System halted.");
+        Serial.println("✗ FATAL ERROR: Sensor initialization failed!");
+        Serial.println("System halted.");
+        Serial.flush();
         while (1) {
             delay(1000);
         }
     }
     
-    ESP_LOGI(TAG, "▶ Starting Real-Time Logger Thread (Core 1)...");
+    Serial.println("init_sensors() completed successfully");
+    Serial.flush();
+    
+    Serial.println("▶ Starting Real-Time Logger Thread (Core 1)...");
+    Serial.flush();
     
     // Create and start the RT logger thread on core 1
+    Serial.println("  → Creating RTLoggerThread object...");
+    Serial.flush();
     rt_logger = new RTLoggerThread(&sensor_manager, 100);  // 100ms update rate
+    Serial.println("  ✓ RTLoggerThread object created");
+    Serial.flush();
     
     // Register the storage write callback
+    Serial.println("  → Registering storage callback...");
+    Serial.flush();
     rt_logger->set_storage_write_callback(on_storage_write);
+    Serial.println("  ✓ Callback registered");
+    Serial.flush();
     
+    Serial.println("  → Calling start() on RT logger...");
+    Serial.flush();
     if (!rt_logger->start()) {
-        ESP_LOGE(TAG, "✗ ERROR: Failed to start RT logger thread");
-        ESP_LOGE(TAG, "System halted.");
+        Serial.println("✗ ERROR: Failed to start RT logger thread");
+        Serial.println("System halted.");
+        Serial.flush();
         while (1) {
             delay(1000);
         }
     }
     
-    ESP_LOGI(TAG, "✓ RT Logger thread started");
+    Serial.println("✓ RT Logger thread started");
+    Serial.flush();
     
-    ESP_LOGI(TAG, "▶ Starting Status Monitor Thread (Core 0)...");
+    Serial.println("▶ Starting Status Monitor Thread (Core 0)...");
+    Serial.flush();
     
     // Create and start status monitor on core 0
+    Serial.println("  → Creating StatusMonitor object...");
+    Serial.flush();
     status_monitor = new StatusMonitor(rt_logger, 1000);  // Report every 1 second for debugging
+    Serial.println("  ✓ StatusMonitor object created");
+    Serial.flush();
+    
+    Serial.println("  → Calling start() on status monitor...");
+    Serial.flush();
     if (!status_monitor->start()) {
-        ESP_LOGE(TAG, "✗ ERROR: Failed to start status monitor thread");
-        ESP_LOGE(TAG, "System halted.");
+        Serial.println("✗ ERROR: Failed to start status monitor thread");
+        Serial.println("System halted.");
+        Serial.flush();
         while (1) {
             delay(1000);
         }
     }
     
-    ESP_LOGI(TAG, "✓ Status monitor started");
+    Serial.println("✓ Status monitor started");
+    Serial.flush();
     
     ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════════════╗");
     ESP_LOGI(TAG, "║              ✓ SYSTEM READY - LOGGING ACTIVE              ║");

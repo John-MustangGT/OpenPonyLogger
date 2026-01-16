@@ -61,6 +61,7 @@ private:
     bool read_accel_raw();
     bool read_gyro_raw();
     bool read_compass_raw();
+    bool read_temperature();
     
     // Raw data conversion
     void convert_accel_data(int16_t raw_x, int16_t raw_y, int16_t raw_z);

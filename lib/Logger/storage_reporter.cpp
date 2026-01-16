@@ -100,7 +100,8 @@ void StorageReporter::print_battery_data(const battery_data_t& battery) {
 }
 
 void StorageReporter::print_debug(const char* message) {
-    ESP_LOGI(TAG, "%s", message);
+    Serial.println(message);
+    Serial.flush();
 }
 
 void StorageReporter::printf_debug(const char* format, ...) {
@@ -109,5 +110,6 @@ void StorageReporter::printf_debug(const char* format, ...) {
     va_start(args, format);
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
-    ESP_LOGI(TAG, "%s", buffer);
+    Serial.println(buffer);
+    Serial.flush();
 }
