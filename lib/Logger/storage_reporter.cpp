@@ -12,21 +12,15 @@ StorageReporter::~StorageReporter() {
 }
 
 void StorageReporter::init(unsigned long baud_rate) {
-    Serial.begin(baud_rate);
-    // Extra wait for USB JTAG to be ready on ESP32-S3
-    delay(500);
+    // Serial.begin() already called in setup(), don't call again
+    // Just configure logging
+    delay(100);
     
     // Configure ESP-IDF logging to use USB Serial/JTAG
     esp_log_level_set("*", ESP_LOG_INFO);
     
-    // Additional delay to ensure USB is ready
-    uint32_t start = millis();
-    while (!Serial && (millis() - start) < 1000) {
-        delay(50);
-    }
-    
     // Send test message to verify serial is working
-    Serial.println("\n\n*** Serial Port Active ***");
+    Serial.println("\n*** Serial Port Active ***");
     Serial.flush();
     ESP_LOGI(TAG, "ESP-IDF Logging initialized");
 }
