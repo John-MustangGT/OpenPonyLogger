@@ -49,58 +49,13 @@ GitHub: https://github.com/John-MustangGT/OpenPonyLogger
 **Target Vehicle:** 2014 Ford Mustang GT (S197) "Ciara"  
 **Inspiration:** Carroll Shelby's "foundation first" philosophy applied to data acquisition
 
-## Appendix A: Message Type Definitions
+## Technical Documentation
 
-### GPS NMEA Message (0x01)
-```c
-// Raw NMEA sentence stored as null-terminated string
-// Example: "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47"
-// Length varies: typically 60-82 bytes
-```
+For detailed information about the logging system, please refer to:
 
-### Accelerometer XYZ Message (0x02)
-```c
-typedef struct {
-    float accel_x;  // G-force lateral
-    float accel_y;  // G-force longitudinal  
-    float accel_z;  // G-force vertical
-    float gyro_x;   // Degrees/sec roll
-    float gyro_y;   // Degrees/sec pitch
-    float gyro_z;   // Degrees/sec yaw
-} __attribute__((packed)) accel_data_t;
-// Fixed length: 24 bytes
-```
-
-### OBD-II PID Message (0x03)
-```c
-typedef struct {
-    uint8_t mode;      // OBD mode (typically 0x01)
-    uint8_t pid;       // Parameter ID
-    uint8_t data_len;  // Response data length
-    uint8_t data[8];   // Response data (max 8 bytes)
-} __attribute__((packed)) obd_data_t;
-// Variable length: 11-19 bytes
-```
-
-### Session Start Message (0xF0)
-```c
-typedef struct {
-    char session_id[32];  // ISO timestamp or UUID
-    uint8_t gps_module;   // 0=NEO-6M, 1=NEO-8M
-    uint8_t version[3];   // Firmware version [major.minor.patch]
-} __attribute__((packed)) session_start_t;
-// Fixed length: 35 bytes
-```
-
-### Session End Message (0xF1)
-```c
-typedef struct {
-    uint32_t total_messages;  // Total messages logged
-    uint32_t dropped_messages; // Messages lost (buffer overflow)
-    uint32_t duration_sec;    // Session duration
-} __attribute__((packed)) session_end_t;
-// Fixed length: 12 bytes
-```
+- **[Log Format Specification](docs/LOG_FORMAT.md)** - Complete logging format including block headers, session headers, NVS schema, and write/recovery semantics
+- **[Record Schema](docs/RECORD_SCHEMA.md)** - Canonical C struct definitions for all record types (IMU, GPS, CAN, COMPASS)
+- **[Project Checklist](docs/PROJECT_CHECKLIST.md)** - V2 prototype implementation tasks and design decisions
 
 ## Appendix B: Ford Mustang S197 CAN Bus Information
 
