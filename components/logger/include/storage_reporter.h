@@ -28,7 +28,8 @@ public:
      * @brief Report a storage write event with current sensor values
      */
     void report_storage_write(const gps_data_t& gps, const accel_data_t& accel,
-                              const gyro_data_t& gyro, const compass_data_t& compass);
+                              const gyro_data_t& gyro, const compass_data_t& compass,
+                              const battery_data_t& battery);
     
     /**
      * @brief Print a debug message
@@ -45,6 +46,7 @@ private:
     void print_accel_data(const accel_data_t& accel);
     void print_gyro_data(const gyro_data_t& gyro);
     void print_compass_data(const compass_data_t& compass);
+    void print_battery_data(const battery_data_t& battery);
 };
 
 #endif // STORAGE_REPORTER_H

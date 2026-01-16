@@ -9,6 +9,7 @@ RTLoggerThread::RTLoggerThread(SensorManager* sensor_manager, uint32_t update_ra
     memset(&m_last_accel, 0, sizeof(m_last_accel));
     memset(&m_last_gyro, 0, sizeof(m_last_gyro));
     memset(&m_last_compass, 0, sizeof(m_last_compass));
+    memset(&m_last_battery, 0, sizeof(m_last_battery));
 }
 
 RTLoggerThread::~RTLoggerThread() {
@@ -46,7 +47,8 @@ void RTLoggerThread::stop() {
 
 void RTLoggerThread::set_storage_write_callback(
     void (*callback)(const gps_data_t&, const accel_data_t&, 
-                     const gyro_data_t&, const compass_data_t&)) {
+                     const gyro_data_t&, const compass_data_t&,
+                     const battery_data_t&)) {
     m_storage_write_callback = callback;
 }
 
@@ -66,13 +68,17 @@ compass_data_t RTLoggerThread::get_last_compass() const {
     return m_last_compass;
 }
 
+battery_data_t RTLoggerThread::get_last_battery() const {
+    return m_last_battery;
+}
+
 uint32_t RTLoggerThread::get_sample_count() const {
     return m_sample_count;
 }
 
 void RTLoggerThread::trigger_storage_write() {
     if (m_storage_write_callback) {
-        m_storage_write_callback(m_last_gps, m_last_accel, m_last_gyro, m_last_compass);
+        m_storage_write_callback(m_last_gps, m_last_accel, m_last_gyro, m_last_compass, m_last_battery);
     }
 }
 
@@ -94,6 +100,7 @@ void RTLoggerThread::task_loop() {
             m_last_accel = m_sensor_manager->get_accel();
             m_last_gyro = m_sensor_manager->get_gyro();
             m_last_compass = m_sensor_manager->get_comp();
+            m_last_battery = m_sensor_manager->get_battery();
             
             m_sample_count++;
         }
