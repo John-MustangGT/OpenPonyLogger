@@ -129,8 +129,14 @@ bool init_sensors() {
  */
 void setup() {
     // Initialize serial communication for debugging
+    // ESP32-S3 needs extra time to establish USB JTAG connection
     reporter.init(115200);
-    delay(500);
+    
+    // Wait longer for USB JTAG to fully establish
+    for (int i = 0; i < 20; i++) {
+        delay(100);
+        Serial.print(".");
+    }
     
     Serial.println("\n\n╔═══════════════════════════════════════════════════════════╗");
     Serial.println("║        OpenPonyLogger - Real-Time Data Logger              ║");
