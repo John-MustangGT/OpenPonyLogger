@@ -2,8 +2,23 @@
 #include <cstring>
 #include <cstdlib>
 
+/**
+ * @brief I2C Constructor (default)
+ */
+PA1010DDriver::PA1010DDriver(TwoWire& wire, uint8_t i2c_addr)
+    : m_comm_mode(CommInterface::I2C),
+      m_serial(nullptr), m_tx_pin(0), m_rx_pin(0), m_baud(0),
+      m_wire(&wire), m_i2c_addr(i2c_addr), m_valid(false) {
+    memset(&m_data, 0, sizeof(m_data));
+}
+
+/**
+ * @brief UART Constructor
+ */
 PA1010DDriver::PA1010DDriver(HardwareSerial& serial, int tx_pin, int rx_pin, unsigned long baud)
-    : m_serial(serial), m_tx_pin(tx_pin), m_rx_pin(rx_pin), m_baud(baud), m_valid(false) {
+    : m_comm_mode(CommInterface::UART),
+      m_serial(&serial), m_tx_pin(tx_pin), m_rx_pin(rx_pin), m_baud(baud),
+      m_wire(nullptr), m_i2c_addr(0), m_valid(false) {
     memset(&m_data, 0, sizeof(m_data));
 }
 
@@ -11,18 +26,36 @@ PA1010DDriver::~PA1010DDriver() {
 }
 
 bool PA1010DDriver::init() {
-    // Initialize serial communication with the GPS module
-    m_serial.begin(m_baud, SERIAL_8N1, m_rx_pin, m_tx_pin);
-    return true;
+    if (m_comm_mode == CommInterface::UART) {
+        // Initialize UART communication with the GPS module
+        if (!m_serial) return false;
+        m_serial->begin(m_baud, SERIAL_8N1, m_rx_pin, m_tx_pin);
+        return true;
+    } else {
+        // Initialize I2C communication
+        if (!m_wire) return false;
+        // I2C bus should already be initialized by the application
+        // Just verify we can communicate with the device
+        m_wire->beginTransmission(m_i2c_addr);
+        return m_wire->endTransmission() == 0;
+    }
 }
 
 bool PA1010DDriver::update() {
+    if (m_comm_mode == CommInterface::UART) {
+        return read_uart_nmea_buffer();
+    } else {
+        return read_i2c_nmea_buffer();
+    }
+}
+
+bool PA1010DDriver::read_uart_nmea_buffer() {
     static char buffer[128];
     static int buffer_idx = 0;
     
     // Read available data from GPS module
-    while (m_serial.available()) {
-        char c = m_serial.read();
+    while (m_serial && m_serial->available()) {
+        char c = m_serial->read();
         
         if (c == '\n') {
             buffer[buffer_idx] = '\0';
@@ -159,4 +192,54 @@ bool PA1010DDriver::parse_gpgga(const char* sentence) {
     m_valid = (fix_quality > 0);
     
     return m_valid;
+}
+
+bool PA1010DDriver::read_i2c_nmea_buffer() {
+    // PA1010D I2C protocol: Read from I2C buffer
+    // Device stores NMEA sentences in an internal buffer
+    // Read format: 2 bytes length + up to 255 bytes NMEA data
+    
+    if (!m_wire) return false;
+    
+    static char sentence_buffer[256];
+    
+    // Request data from PA1010D
+    // Address pointer at 0xFF indicates we want the NMEA buffer
+    m_wire->beginTransmission(m_i2c_addr);
+    m_wire->write(0xFF);  // NMEA buffer register
+    m_wire->endTransmission();
+    
+    // Read the length (2 bytes, big-endian)
+    m_wire->requestFrom(m_i2c_addr, (size_t)2);
+    if (m_wire->available() < 2) {
+        return false;
+    }
+    
+    uint16_t length = (m_wire->read() << 8) | m_wire->read();
+    
+    // Limit length to avoid buffer overflow
+    if (length == 0 || length > 255) {
+        return false;
+    }
+    
+    // Read the NMEA sentence
+    m_wire->requestFrom(m_i2c_addr, (size_t)length);
+    
+    int bytes_read = 0;
+    while (m_wire->available() && bytes_read < length) {
+        sentence_buffer[bytes_read++] = m_wire->read();
+    }
+    
+    if (bytes_read != length) {
+        return false;
+    }
+    
+    sentence_buffer[bytes_read] = '\0';
+    
+    // Parse the NMEA sentence if it's valid
+    if (sentence_buffer[0] == '$') {
+        return parse_nmea_sentence(sentence_buffer);
+    }
+    
+    return false;
 }
