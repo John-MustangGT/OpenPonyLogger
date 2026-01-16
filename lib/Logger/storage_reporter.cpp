@@ -10,8 +10,14 @@ StorageReporter::~StorageReporter() {
 
 void StorageReporter::init(unsigned long baud_rate) {
     Serial.begin(baud_rate);
-    // Wait for serial connection
-    delay(100);
+    // Extra wait for USB JTAG to be ready on ESP32-S3
+    delay(500);
+    
+    // Additional delay to ensure USB is ready
+    uint32_t start = millis();
+    while (!Serial && (millis() - start) < 1000) {
+        delay(50);
+    }
 }
 
 void StorageReporter::report_storage_write(const gps_data_t& gps, const accel_data_t& accel,
