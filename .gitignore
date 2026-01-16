@@ -40,8 +40,14 @@
 # debug information files
 *.dwo
 
-# PlatformIO
+# Ignore PlatformIO build and library directories
 .pio/
 
-# VS Code
+# Ignore VS Code files and directories
 .vscode/
+
+# macOS finder files
+.DS_Store
+
+# CodeQL auto-detected source root (generated)
+_codeql_detected_source_root/
