@@ -11,6 +11,11 @@
 #define I2C_SDA_PIN         21
 #define I2C_SCL_PIN         22
 #define IMU_I2C_ADDR        0x68
+#define GPS_I2C_ADDR        0x10
+
+// GPS Communication Mode Selection
+// Set to true for I2C (default), false for UART
+#define GPS_USE_I2C         true
 
 // Global instances
 SensorManager sensor_manager;
@@ -35,17 +40,28 @@ void on_storage_write(const gps_data_t& gps, const accel_data_t& accel,
  * @brief Initialize sensors
  */
 bool init_sensors() {
-    // Initialize I2C for IMU
+    // Initialize I2C for IMU and GPS (if using I2C)
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Wire.setClock(400000);  // 400kHz I2C clock
     
     // Create and initialize GPS driver
-    gps_driver = new PA1010DDriver(Serial1, GPS_TX_PIN, GPS_RX_PIN, 9600);
-    if (!gps_driver->init()) {
-        reporter.print_debug("ERROR: Failed to initialize GPS");
-        return false;
+    if (GPS_USE_I2C) {
+        // I2C mode (default)
+        gps_driver = new PA1010DDriver(Wire, GPS_I2C_ADDR);
+        if (!gps_driver->init()) {
+            reporter.print_debug("ERROR: Failed to initialize GPS (I2C mode)");
+            return false;
+        }
+        reporter.print_debug("GPS initialized (I2C mode)");
+    } else {
+        // UART mode
+        gps_driver = new PA1010DDriver(Serial1, GPS_TX_PIN, GPS_RX_PIN, 9600);
+        if (!gps_driver->init()) {
+            reporter.print_debug("ERROR: Failed to initialize GPS (UART mode)");
+            return false;
+        }
+        reporter.print_debug("GPS initialized (UART mode)");
     }
-    reporter.print_debug("GPS initialized");
     
     // Create and initialize IMU driver
     imu_driver = new ICM20948Driver(Wire, IMU_I2C_ADDR);
