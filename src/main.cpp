@@ -131,11 +131,27 @@ bool init_sensors() {
  * @brief Setup function (Arduino standard)
  */
 void setup() {
+    // Very early serial output before anything else
+    // ESP32-S3 uses USB CDC for Serial
+    Serial.begin(115200);
+    delay(2000);  // Longer delay for USB CDC to stabilize
+    
+    // Send simple test without any formatting
+    Serial.write("BOOT\n");
+    Serial.write("BOOT\n");
+    Serial.write("BOOT\n");
+    Serial.flush();
+    delay(500);
+    
+    Serial.println("\n\n\n=== BOOT START ===");
+    Serial.flush();
+    
     // Initialize serial communication for debugging
     // ESP32-S3 needs extra time to establish USB JTAG connection
     reporter.init(115200);
     
     // Wait longer for USB JTAG to fully establish
+    Serial.println("Waiting for USB JTAG...");
     for (int i = 0; i < 20; i++) {
         delay(100);
         Serial.print(".");
