@@ -2,6 +2,7 @@
 #include "sensor_hal.h"
 #include "pa1010d_driver.h"
 #include "icm20948_driver.h"
+#include "max17048_driver.h"
 #include "rt_logger_thread.h"
 #include "storage_reporter.h"
 
@@ -10,8 +11,9 @@
 #define GPS_RX_PIN          16
 #define I2C_SDA_PIN         21
 #define I2C_SCL_PIN         22
-#define IMU_I2C_ADDR        0x68
 #define GPS_I2C_ADDR        0x10
+#define IMU_I2C_ADDR        0x69
+#define BATTERY_I2C_ADDR    0x36
 
 // GPS Communication Mode Selection
 // Set to true for I2C (default), false for UART
@@ -28,12 +30,16 @@ PA1010DDriver* gps_driver = nullptr;
 // ICM20948 IMU driver instance
 ICM20948Driver* imu_driver = nullptr;
 
+// MAX17048 Battery monitor driver instance
+MAX17048Driver* battery_driver = nullptr;
+
 /**
  * @brief Callback function for storage write events
  */
 void on_storage_write(const gps_data_t& gps, const accel_data_t& accel,
-                      const gyro_data_t& gyro, const compass_data_t& compass) {
-    reporter.report_storage_write(gps, accel, gyro, compass);
+                      const gyro_data_t& gyro, const compass_data_t& compass,
+                      const battery_data_t& battery) {
+    reporter.report_storage_write(gps, accel, gyro, compass, battery);
 }
 
 /**
@@ -71,8 +77,16 @@ bool init_sensors() {
     }
     reporter.print_debug("IMU initialized");
     
+    // Create and initialize battery monitor driver
+    battery_driver = new MAX17048Driver(Wire, BATTERY_I2C_ADDR);
+    if (!battery_driver->init()) {
+        reporter.print_debug("ERROR: Failed to initialize battery monitor");
+        return false;
+    }
+    reporter.print_debug("Battery monitor initialized");
+    
     // Initialize sensor manager with the drivers
-    if (!sensor_manager.init(gps_driver, imu_driver, imu_driver, imu_driver)) {
+    if (!sensor_manager.init(gps_driver, imu_driver, imu_driver, imu_driver, battery_driver)) {
         reporter.print_debug("ERROR: Failed to initialize sensor manager");
         return false;
     }

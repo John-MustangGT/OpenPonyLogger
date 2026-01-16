@@ -15,7 +15,8 @@ void StorageReporter::init(unsigned long baud_rate) {
 }
 
 void StorageReporter::report_storage_write(const gps_data_t& gps, const accel_data_t& accel,
-                                           const gyro_data_t& gyro, const compass_data_t& compass) {
+                                           const gyro_data_t& gyro, const compass_data_t& compass,
+                                           const battery_data_t& battery) {
     Serial.println("\n=== STORAGE WRITE EVENT ===");
     Serial.print("Timestamp: ");
     Serial.printf("%04d-%02d-%02d %02d:%02d:%02d\n", 
@@ -33,6 +34,9 @@ void StorageReporter::report_storage_write(const gps_data_t& gps, const accel_da
     
     Serial.println("\n--- Compass Data ---");
     print_compass_data(compass);
+    
+    Serial.println("\n--- Battery Data ---");
+    print_battery_data(battery);
     
     Serial.println("===========================\n");
 }
@@ -72,6 +76,18 @@ void StorageReporter::print_compass_data(const compass_data_t& compass) {
     Serial.printf("  Z: %.2f uT\n", compass.z);
     Serial.printf("  Magnitude: %.2f uT\n", 
                   sqrtf(compass.x * compass.x + compass.y * compass.y + compass.z * compass.z));
+}
+
+void StorageReporter::print_battery_data(const battery_data_t& battery) {
+    if (battery.valid) {
+        Serial.printf("  Voltage:     %.3f V\n", battery.voltage);
+        Serial.printf("  State of Charge: %.2f %%\n", battery.state_of_charge);
+        Serial.printf("  Current:     %.2f mA\n", battery.current);
+        Serial.printf("  Temperature: %.2f °C\n", battery.temperature / 100.0f);
+        Serial.println("  Status: VALID");
+    } else {
+        Serial.println("  Status: INVALID - Battery monitor not responding");
+    }
 }
 
 void StorageReporter::print_debug(const char* message) {

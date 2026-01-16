@@ -1,17 +1,19 @@
 #include "sensor_hal.h"
 
 SensorManager::SensorManager()
-    : m_gps(nullptr), m_accel(nullptr), m_gyro(nullptr), m_compass(nullptr) {
+    : m_gps(nullptr), m_accel(nullptr), m_gyro(nullptr), m_compass(nullptr), m_battery(nullptr) {
 }
 
 SensorManager::~SensorManager() {
 }
 
-bool SensorManager::init(IGPSSensor* gps, IAccelSensor* accel, IGyroSensor* gyro, ICompassSensor* compass) {
+bool SensorManager::init(IGPSSensor* gps, IAccelSensor* accel, IGyroSensor* gyro, 
+              ICompassSensor* compass, IBatterySensor* battery) {
     m_gps = gps;
     m_accel = accel;
     m_gyro = gyro;
     m_compass = compass;
+    m_battery = battery;
 
     bool success = true;
 
@@ -25,6 +27,9 @@ bool SensorManager::init(IGPSSensor* gps, IAccelSensor* accel, IGyroSensor* gyro
         success = false;
     }
     if (m_compass && !m_compass->init()) {
+        success = false;
+    }
+    if (m_battery && !m_battery->init()) {
         success = false;
     }
 
@@ -44,6 +49,9 @@ bool SensorManager::update_all() {
         success = false;
     }
     if (m_compass && !m_compass->update()) {
+        success = false;
+    }
+    if (m_battery && !m_battery->update()) {
         success = false;
     }
 
@@ -78,12 +86,31 @@ compass_data_t SensorManager::get_comp() const {
     return compass_data_t{};
 }
 
+battery_data_t SensorManager::get_battery() const {
+    if (m_battery) {
+        return m_battery->get_data();
+    }
+    return battery_data_t{};
+}
+
 bool SensorManager::gps_valid() const {
     return m_gps && m_gps->is_valid();
 }
 
 bool SensorManager::accel_valid() const {
     return m_accel && m_accel->is_valid();
+}
+
+bool SensorManager::gyro_valid() const {
+    return m_gyro && m_gyro->is_valid();
+}
+
+bool SensorManager::compass_valid() const {
+    return m_compass && m_compass->is_valid();
+}
+
+bool SensorManager::battery_valid() const {
+    return m_battery && m_battery->is_valid();
 }
 
 bool SensorManager::gyro_valid() const {
