@@ -2,6 +2,8 @@
 #include "sensor_hal.h"
 #include "pa1010d_driver.h"
 #include "icm20948_driver.h"
+#include "icm20948_gyro_wrapper.h"
+#include "icm20948_compass_wrapper.h"
 #include "max17048_driver.h"
 #include "rt_logger_thread.h"
 #include "storage_reporter.h"
@@ -29,6 +31,10 @@ PA1010DDriver* gps_driver = nullptr;
 
 // ICM20948 IMU driver instance
 ICM20948Driver* imu_driver = nullptr;
+
+// ICM20948 IMU wrappers for gyro and compass
+ICM20948GyroWrapper* gyro_wrapper = nullptr;
+ICM20948CompassWrapper* compass_wrapper = nullptr;
 
 // MAX17048 Battery monitor driver instance
 MAX17048Driver* battery_driver = nullptr;
@@ -85,8 +91,12 @@ bool init_sensors() {
     }
     reporter.print_debug("Battery monitor initialized");
     
+    // Create wrappers for gyroscope and compass that delegate to the IMU driver
+    gyro_wrapper = new ICM20948GyroWrapper(imu_driver);
+    compass_wrapper = new ICM20948CompassWrapper(imu_driver);
+    
     // Initialize sensor manager with the drivers
-    if (!sensor_manager.init(gps_driver, imu_driver, imu_driver, imu_driver, battery_driver)) {
+    if (!sensor_manager.init(gps_driver, imu_driver, gyro_wrapper, compass_wrapper, battery_driver)) {
         reporter.print_debug("ERROR: Failed to initialize sensor manager");
         return false;
     }
