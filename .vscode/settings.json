@@ -3,5 +3,12 @@
         "mv": true,
         "mkdir": true,
         "cp": true
+    },
+    "platformio-ide.openOnStartup": false,
+    "platformio-ide.customPATH": "",
+    "platformio-ide.useDevelopmentPlatformIO": false,
+    "extensions.showRecommendationsOnInstall": true,
+    "[platformio]": {
+        "editor.defaultFormatter": "platformio.platformio-ide"
     }
 }
