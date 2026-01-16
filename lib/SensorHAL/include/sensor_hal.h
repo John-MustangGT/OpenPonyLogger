@@ -22,12 +22,13 @@ struct gps_data_t {
 };
 
 /**
- * @brief Accelerometer Data Structure
+ * @brief Accelerometer Data Structure (includes IMU temperature)
  */
 struct accel_data_t {
     float x;
     float y;
     float z;
+    float temperature;  // IMU die temperature in °C
 };
 
 /**

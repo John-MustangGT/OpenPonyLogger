@@ -1,4 +1,5 @@
 #include "rt_logger_thread.h"
+#include <Arduino.h>
 #include <cstring>
 
 RTLoggerThread::RTLoggerThread(SensorManager* sensor_manager, uint32_t update_rate_ms)
@@ -92,6 +93,14 @@ void RTLoggerThread::task_wrapper(void* arg) {
 void RTLoggerThread::task_loop() {
     const TickType_t delay_ticks = pdMS_TO_TICKS(m_update_rate_ms);
     
+    // Debug: Print once at start
+    static bool first_run = true;
+    if (first_run) {
+        Serial.println("RT Logger thread loop started");
+        Serial.flush();
+        first_run = false;
+    }
+    
     while (m_running) {
         // Update all sensors through HAL
         if (m_sensor_manager->update_all()) {
@@ -103,6 +112,15 @@ void RTLoggerThread::task_loop() {
             m_last_battery = m_sensor_manager->get_battery();
             
             m_sample_count++;
+        } else {
+            // Debug: Report update failure periodically
+            static uint32_t last_error_report = 0;
+            uint32_t now = millis();
+            if (now - last_error_report > 5000) {
+                Serial.println("WARNING: update_all() returned false");
+                Serial.flush();
+                last_error_report = now;
+            }
         }
         
         // Delay until next update

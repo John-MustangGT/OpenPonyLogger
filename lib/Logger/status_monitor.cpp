@@ -1,7 +1,34 @@
 #include "status_monitor.h"
+#include "units_helper.h"
 #include <Arduino.h>
 #include <cstdio>
 #include <esp_log.h>
+
+// Forward declarations - defined in st7789_display.cpp
+class ST7789Display {
+public:
+    static void update(uint32_t uptime_ms,
+                      float temp,
+                      float accel_x, float accel_y, float accel_z,
+                      float gyro_x, float gyro_y, float gyro_z,
+                      float battery_soc, float battery_voltage,
+                      bool gps_valid, uint32_t sample_count,
+                      float gps_speed = 0.0f);
+};
+
+class NeoPixelStatus {
+public:
+    enum class State {
+        BOOTING,      // Red
+        NO_GPS_FIX,   // Yellow flashing
+        GPS_3D_FIX    // Green
+    };
+    
+    static bool init();
+    static void setState(State state);
+    static void update(uint32_t current_ms);
+    static void deinit();
+};
 
 static const char* TAG = "STATUS";
 
@@ -61,10 +88,13 @@ void StatusMonitor::print_status_now() {
     uint32_t uptime_ms = millis();
     uint32_t uptime_sec = uptime_ms / 1000;
     
-    ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║ STATUS REPORT - Uptime: %u:%02u:%02u (writes: %u)", 
+    char buffer[128];
+    
+    Serial.println("╔═══════════════════════════════════════════════════════════╗");
+    snprintf(buffer, sizeof(buffer), "║ STATUS REPORT - Uptime: %u:%02u:%02u (writes: %u)", 
              uptime_sec / 3600, (uptime_sec / 60) % 60, uptime_sec % 60, m_write_count);
-    ESP_LOGI(TAG, "╠═══════════════════════════════════════════════════════════╣");
+    Serial.println(buffer);
+    Serial.println("╠═══════════════════════════════════════════════════════════╣");
     
     if (m_rt_logger != nullptr) {
         // Get latest sensor data
@@ -77,34 +107,59 @@ void StatusMonitor::print_status_now() {
         
         // GPS Status
         if (gps.valid) {
-            ESP_LOGI(TAG, "║ GPS: VALID - Lat:%.6f Lon:%.6f Alt:%.1fm Sats:%d",
+            snprintf(buffer, sizeof(buffer), "║ GPS: VALID - Lat:%.6f Lon:%.6f Alt:%.1fm Sats:%d",
                      gps.latitude, gps.longitude, gps.altitude, gps.satellites);
+            Serial.println(buffer);
         } else {
-            ESP_LOGW(TAG, "║ GPS: NO FIX");
+            Serial.println("║ GPS: NO FIX");
         }
-        ESP_LOGI(TAG, "║");
+        Serial.println("║");
         
         // IMU Status
-        ESP_LOGI(TAG, "║ Accel: X=%.2fg Y=%.2fg Z=%.2fg",
-                 accel.x, accel.y, accel.z);
-        ESP_LOGI(TAG, "║ Gyro:  X=%.1fdps Y=%.1fdps Z=%.1fdps",
+        snprintf(buffer, sizeof(buffer), "║ Accel: X=%.2fg Y=%.2fg Z=%.2fg | Temp: %.1f%s",
+                 accel.x, accel.y, accel.z, convert_temperature(accel.temperature), get_temp_unit());
+        Serial.println(buffer);
+        snprintf(buffer, sizeof(buffer), "║ Gyro:  X=%.1fdps Y=%.1fdps Z=%.1fdps",
                  gyro.x, gyro.y, gyro.z);
-        ESP_LOGI(TAG, "║ Compass: X=%.1fuT Y=%.1fuT Z=%.1fuT",
+        Serial.println(buffer);
+        snprintf(buffer, sizeof(buffer), "║ Compass: X=%.1fuT Y=%.1fuT Z=%.1fuT",
                  compass.x, compass.y, compass.z);
-        ESP_LOGI(TAG, "║");
+        Serial.println(buffer);
+        Serial.println("║");
         
         // Battery Status
-        ESP_LOGI(TAG, "║ Battery: %.1f%% SOC | %.2fV | %d mA | %.1f°C",
+        snprintf(buffer, sizeof(buffer), "║ Battery: %.1f%% SOC | %.2fV | %d mA | %.1f°C",
                  battery.state_of_charge, battery.voltage, (int)battery.current, 
                  battery.temperature / 100.0f);
-        ESP_LOGI(TAG, "║");
+        Serial.println(buffer);
+        Serial.println("║");
         
         // Sample count
-        ESP_LOGI(TAG, "║ Samples logged: %u (%.1f samples/sec)",
+        snprintf(buffer, sizeof(buffer), "║ Samples logged: %u (%.1f samples/sec)",
                  sample_count, sample_count > 0 ? (float)sample_count / (uptime_sec > 0 ? uptime_sec : 1) : 0.0f);
+        Serial.println(buffer);
+        
+        // Update display with sensor data
+        ST7789Display::update(
+            uptime_ms,
+            accel.temperature,
+            accel.x, accel.y, accel.z,
+            gyro.x, gyro.y, gyro.z,
+            battery.state_of_charge, battery.voltage,
+            gps.valid, sample_count,
+            gps.speed
+        );
+        
+        // Update NeoPixel state based on GPS status
+        if (gps.valid) {
+            NeoPixelStatus::setState(NeoPixelStatus::State::GPS_3D_FIX);
+        } else {
+            NeoPixelStatus::setState(NeoPixelStatus::State::NO_GPS_FIX);
+        }
     }
     
-    ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════════════╝");
+    Serial.println("╚═══════════════════════════════════════════════════════════╝");
+    Serial.flush();
 }
 
 void StatusMonitor::task_wrapper(void* arg) {
@@ -123,6 +178,9 @@ void StatusMonitor::task_loop() {
             print_status_now();
             m_last_report_time = now;
         }
+        
+        // Update NeoPixel animation (for flashing states)
+        NeoPixelStatus::update(now);
         
         // Small delay to prevent task from consuming all CPU
         vTaskDelay(pdMS_TO_TICKS(100));
