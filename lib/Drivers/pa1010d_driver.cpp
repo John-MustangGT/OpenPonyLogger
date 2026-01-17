@@ -94,7 +94,12 @@ bool PA1010DDriver::parse_nmea_sentence(const char* sentence) {
         last_print_time = now;
     }
     
-    // Only process GNGGA sentences (GPS+GLONASS position fix)
+    // Process RMC sentences for time, date, and speed
+    if (strncmp(sentence, "$GNRMC", 6) == 0 || strncmp(sentence, "$GPRMC", 6) == 0) {
+        return parse_gprmc(sentence);
+    }
+    
+    // Process GGA sentences for position and satellite count
     if (strncmp(sentence, "$GNGGA", 6) == 0) {
         return parse_gpgga(sentence);
     }
@@ -116,9 +121,10 @@ bool PA1010DDriver::parse_gprmc(const char* sentence) {
     
     if (!pos) return false;
     
-    // Time: hhmmss
+    // Time: hhmmss.ss (we extract just hhmmss)
     pos++;
-    sscanf(pos, "%2hhu%2hhu%2hhu", &m_data.hour, &m_data.minute, &m_data.second);
+    int parsed = sscanf(pos, "%2hhu%2hhu%2hhu", &m_data.hour, &m_data.minute, &m_data.second);
+    if (parsed != 3) return false;
     
     pos = strchr(pos, ',') + 1;
     char status = *pos;  // A=valid, V=invalid
@@ -191,8 +197,10 @@ bool PA1010DDriver::parse_gpgga(const char* sentence) {
     const char* pos = strchr(sentence, ',');
     if (!pos) return false;
     
-    // Time field - skip it for now
+    // Time field - hhmmss.ss format
     pos++;
+    int time_parsed = sscanf(pos, "%2hhu%2hhu%2hhu", &m_data.hour, &m_data.minute, &m_data.second);
+    // Continue even if time parsing fails, since we need the position data
     
     // Latitude
     double tmp_lat = 0;
