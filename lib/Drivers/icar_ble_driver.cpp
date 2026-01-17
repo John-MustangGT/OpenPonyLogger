@@ -1,5 +1,6 @@
 #include "icar_ble_driver.h"
 #include <cstring>
+#include <algorithm>
 
 // Static member initialization
 obd_data_t IcarBleDriver::m_data = {};
@@ -7,6 +8,7 @@ bool IcarBleDriver::m_connected = false;
 char IcarBleDriver::m_device_address[18] = "";
 NimBLERemoteCharacteristic* IcarBleDriver::m_rx_char = nullptr;
 NimBLERemoteCharacteristic* IcarBleDriver::m_tx_char = nullptr;
+std::vector<obd_pid_config_t> IcarBleDriver::m_configured_pids = {};
 
 // vgate iCar 2 Pro BLE UUIDs
 static const char* SERVICE_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb";
@@ -185,4 +187,48 @@ void IcarBleDriver::set_device_address(const char* address) {
         strncpy(m_device_address, address, sizeof(m_device_address) - 1);
         m_device_address[sizeof(m_device_address) - 1] = '\0';
     }
+}
+
+bool IcarBleDriver::add_pid(uint8_t pid, uint32_t poll_interval_ms, const char* description) {
+    // Check if PID already exists
+    for (auto& pid_config : m_configured_pids) {
+        if (pid_config.pid == pid) {
+            // Update existing PID
+            pid_config.poll_interval_ms = poll_interval_ms;
+            pid_config.description = description;
+            Serial.printf("[OBD] Updated PID 0x%02X polling interval to %lu ms\n", pid, poll_interval_ms);
+            return true;
+        }
+    }
+    
+    // Add new PID
+    obd_pid_config_t new_pid = {
+        .pid = pid,
+        .poll_interval_ms = poll_interval_ms,
+        .last_poll_ms = 0,
+        .description = description
+    };
+    
+    m_configured_pids.push_back(new_pid);
+    Serial.printf("[OBD] Added PID 0x%02X (%s) with interval %lu ms\n", pid, description, poll_interval_ms);
+    return true;
+}
+
+void IcarBleDriver::remove_pid(uint8_t pid) {
+    auto it = std::find_if(m_configured_pids.begin(), m_configured_pids.end(),
+                          [pid](const obd_pid_config_t& config) { return config.pid == pid; });
+    
+    if (it != m_configured_pids.end()) {
+        Serial.printf("[OBD] Removed PID 0x%02X\n", pid);
+        m_configured_pids.erase(it);
+    }
+}
+
+const std::vector<obd_pid_config_t>& IcarBleDriver::get_configured_pids() {
+    return m_configured_pids;
+}
+
+void IcarBleDriver::clear_all_pids() {
+    m_configured_pids.clear();
+    Serial.println("[OBD] Cleared all configured PIDs");
 }
