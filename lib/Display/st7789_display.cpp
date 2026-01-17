@@ -1,4 +1,5 @@
 #include "st7789_display.h"
+#include "display_labels.h"
 #include "../../../lib/Logger/include/units_helper.h"
 #include <SPI.h>
 #include <cstdio>
@@ -125,6 +126,14 @@ void ST7789Display::update(uint32_t uptime_ms,
     
     // Clear screen to dark background
     m_tft->fillScreen(ST77XX_BLACK);
+    delayMicroseconds(100);  // Small delay to ensure display processes the clear
+    
+    // Pre-clear all text rows to prevent ghosting
+    m_tft->fillRect(0, 0, 240, 22, ST77XX_BLACK);     // Row 1 (time/samples)
+    m_tft->fillRect(0, 25, 240, 20, ST77XX_BLACK);    // Row 2 (accel)
+    m_tft->fillRect(0, 45, 240, 20, ST77XX_BLACK);    // Row 3 (gyro)
+    m_tft->fillRect(0, 65, 240, 22, ST77XX_BLACK);    // Row 4 (GPS coords)
+    m_tft->fillRect(0, 85, 240, 20, ST77XX_BLACK);    // Row 5 (speed)
     
     // Calculate uptime
     uint32_t uptime_sec = uptime_ms / 1000;
@@ -133,20 +142,12 @@ void ST7789Display::update(uint32_t uptime_ms,
     uint32_t seconds = uptime_sec % 60;
     
     // ========== ROW 1: TIME & SAMPLE COUNT ==========
-    m_tft->setTextColor(ST77XX_CYAN);
-    m_tft->setTextSize(2);
-    m_tft->setCursor(2, 2);
-    
     char timestr[16];
     snprintf(timestr, sizeof(timestr), "%u:%02u:%02u", hours, minutes, seconds);
-    m_tft->println(timestr);
+    DisplayLabel::draw(m_tft, timestr, 2, 2, ST77XX_CYAN, ST77XX_BLACK, 2);
     
     // Sample count on right side with logging state symbol
-    m_tft->setTextColor(ST77XX_YELLOW);
-    m_tft->setCursor(140, 5);
-    
-    // Scale samples with K (thousands) or M (millions)
-    char sampstr[16];
+    char sampstr[32];
     if (sample_count >= 1000000) {
         snprintf(sampstr, sizeof(sampstr), "%.1fM%s", sample_count / 1000000.0f, is_paused ? "⏸" : "●");
     } else if (sample_count >= 1000) {
@@ -154,53 +155,36 @@ void ST7789Display::update(uint32_t uptime_ms,
     } else {
         snprintf(sampstr, sizeof(sampstr), "%u%s", sample_count, is_paused ? "⏸" : "●");
     }
-    m_tft->println(sampstr);
+    DisplayLabel::draw(m_tft, sampstr, 140, 5, ST77XX_YELLOW, ST77XX_BLACK, 2);
     
     // ========== ROW 2: ACCELEROMETER DATA (LARGER) ==========
-    m_tft->setTextColor(ST77XX_WHITE);
-    m_tft->setTextSize(2);
-    m_tft->setCursor(2, 28);
-    
     char accel_line[40];
     snprintf(accel_line, sizeof(accel_line), "A:%+.2f %+.2f %+.2f", accel_x, accel_y, accel_z);
-    m_tft->println(accel_line);
+    DisplayLabel::draw(m_tft, accel_line, 2, 28, ST77XX_WHITE, ST77XX_BLACK, 2);
     
     // ========== ROW 3: GYROSCOPE DATA (LARGER) ==========
-    m_tft->setCursor(2, 48);
-    
     char gyro_line[40];
     snprintf(gyro_line, sizeof(gyro_line), "G:%+.1f %+.1f %+.1f", gyro_x, gyro_y, gyro_z);
-    m_tft->println(gyro_line);
+    DisplayLabel::draw(m_tft, gyro_line, 2, 48, ST77XX_WHITE, ST77XX_BLACK, 2);
     
     // ========== ROW 4: GPS COORDINATES (LATITUDE LONGITUDE ALTITUDE) ==========
-    m_tft->setCursor(2, 68);
-    m_tft->setTextSize(2);
-    
     if (gps_valid) {
-        m_tft->setTextColor(ST77XX_GREEN);
         char gps_line[40];
-        // Format: +DDD.D +DDD.D ALT
         snprintf(gps_line, sizeof(gps_line), "%+6.1f %+7.1f %5.0fm", 
                  gps_latitude, gps_longitude, gps_altitude);
-        m_tft->println(gps_line);
+        DisplayLabel::draw(m_tft, gps_line, 2, 68, ST77XX_GREEN, ST77XX_BLACK, 2);
     } else {
-        m_tft->setTextColor(ST77XX_RED);
-        m_tft->println("No GPS Fix");
+        DisplayLabel::draw(m_tft, "No GPS Fix", 2, 68, ST77XX_RED, ST77XX_BLACK, 2);
     }
     
     // ========== ROW 5: GPS SPEED STATUS ==========
-    m_tft->setTextSize(2);
-    m_tft->setCursor(2, 88);
-    
     if (gps_valid) {
-        m_tft->setTextColor(ST77XX_GREEN);
         float display_speed = convert_speed(gps_speed);
-        char gps_str[20];
+        char gps_str[32];
         snprintf(gps_str, sizeof(gps_str), "Spd:%.1f%s", display_speed, get_speed_unit());
-        m_tft->println(gps_str);
+        DisplayLabel::draw(m_tft, gps_str, 2, 88, ST77XX_GREEN, ST77XX_BLACK, 2);
     } else {
-        m_tft->setTextColor(ST77XX_YELLOW);
-        m_tft->println("GPS Waiting");
+        DisplayLabel::draw(m_tft, "GPS Waiting", 2, 88, ST77XX_YELLOW, ST77XX_BLACK, 2);
     }
     
     // ========== BOTTOM: GPS TIME & BATTERY INDICATOR ==========
@@ -229,24 +213,19 @@ void ST7789Display::update(uint32_t uptime_ms,
     m_tft->drawRect(2, bar_y, bar_width, bar_height, ST77XX_WHITE);
     
     // Display percentage next to bar
-    m_tft->setCursor(45, bar_y + 1);
-    m_tft->setTextColor(ST77XX_WHITE);
-    char pct_str[8];
+    char pct_str[16];
     snprintf(pct_str, sizeof(pct_str), "%.0f%%", battery_soc);
-    m_tft->print(pct_str);
+    DisplayLabel::draw(m_tft, pct_str, 45, bar_y + 1, ST77XX_WHITE, ST77XX_BLACK, 1);
     
     // Display GPS time on the right side (if valid)
-    m_tft->setCursor(75, bar_y + 1);
     if (gps_valid) {
-        m_tft->setTextColor(ST77XX_CYAN);
-        // Build time string to avoid truncation warning
+        // Build time string
         String time_str = String(gps_hour < 10 ? "0" : "") + String(gps_hour) + ":" +
                          String(gps_minute < 10 ? "0" : "") + String(gps_minute) + ":" +
                          String(gps_second < 10 ? "0" : "") + String(gps_second);
-        m_tft->print(time_str.c_str());
+        DisplayLabel::draw(m_tft, time_str.c_str(), 75, bar_y + 1, ST77XX_CYAN, ST77XX_BLACK, 1);
     } else {
-        m_tft->setTextColor(ST77XX_YELLOW);
-        m_tft->print("--:--:--");
+        DisplayLabel::draw(m_tft, "--:--:--", 75, bar_y + 1, ST77XX_YELLOW, ST77XX_BLACK, 1);
     }
 }
 

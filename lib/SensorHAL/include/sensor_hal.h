@@ -2,6 +2,7 @@
 #define SENSOR_HAL_H
 
 #include <cstdint>
+#include "obd_data.h"
 
 /**
  * @brief GPS Data Structure
