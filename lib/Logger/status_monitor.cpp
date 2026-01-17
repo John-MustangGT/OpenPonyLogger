@@ -4,31 +4,14 @@
 #include <cstdio>
 #include <esp_log.h>
 
-// Forward declarations - defined in st7789_display.cpp
-class ST7789Display {
-public:
-    static void update(uint32_t uptime_ms,
-                      float temp,
-                      float accel_x, float accel_y, float accel_z,
-                      float gyro_x, float gyro_y, float gyro_z,
-                      float battery_soc, float battery_voltage,
-                      bool gps_valid, uint32_t sample_count,
-                      float gps_speed = 0.0f);
-};
+// Button GPIO pins
+#define BUTTON_D0 0   // Pause/Resume
+#define BUTTON_D1 1   // Cycle display mode
+#define BUTTON_D2 2   // Mark Event
 
-class NeoPixelStatus {
-public:
-    enum class State {
-        BOOTING,      // Red
-        NO_GPS_FIX,   // Yellow flashing
-        GPS_3D_FIX    // Green
-    };
-    
-    static bool init();
-    static void setState(State state);
-    static void update(uint32_t current_ms);
-    static void deinit();
-};
+// Button debounce settings
+#define BUTTON_DEBOUNCE_MS 20
+#define BUTTON_LONG_PRESS_MS 1000
 
 static const char* TAG = "STATUS";
 
@@ -139,21 +122,36 @@ void StatusMonitor::print_status_now() {
                  sample_count, sample_count > 0 ? (float)sample_count / (uptime_sec > 0 ? uptime_sec : 1) : 0.0f);
         Serial.println(buffer);
         
-        // Update display with sensor data
-        ST7789Display::update(
-            uptime_ms,
-            accel.temperature,
-            accel.x, accel.y, accel.z,
-            gyro.x, gyro.y, gyro.z,
-            battery.state_of_charge, battery.voltage,
-            gps.valid, sample_count,
-            gps.speed
-        );
+        // Update display based on current mode
+        DisplayMode current_mode = ST7789Display::get_display_mode();
+        bool is_paused = m_rt_logger->is_storage_paused();
         
-        // Update NeoPixel state based on GPS status
-        if (gps.valid) {
+        if (current_mode == DisplayMode::MAIN_SCREEN) {
+            // Show sensor data
+            ST7789Display::update(
+                uptime_ms,
+                accel.temperature,
+                accel.x, accel.y, accel.z,
+                gyro.x, gyro.y, gyro.z,
+                battery.state_of_charge, battery.voltage,
+                gps.valid, sample_count,
+                is_paused, gps.speed
+            );
+        } else if (current_mode == DisplayMode::INFO_SCREEN) {
+            // Show IP/BLE information
+            ST7789Display::show_info_screen("192.168.1.1", "OpenPonyLogger");
+        }
+        // DisplayMode::DARK - do nothing, display is off
+        
+        // Update NeoPixel state based on pause and GPS status
+        if (is_paused) {
+            // When paused, show slow flash regardless of GPS state
+            NeoPixelStatus::setState(NeoPixelStatus::State::PAUSED);
+        } else if (gps.valid) {
+            // Normal operation with GPS lock
             NeoPixelStatus::setState(NeoPixelStatus::State::GPS_3D_FIX);
         } else {
+            // Normal operation, searching for GPS
             NeoPixelStatus::setState(NeoPixelStatus::State::NO_GPS_FIX);
         }
     }
@@ -170,8 +168,91 @@ void StatusMonitor::task_wrapper(void* arg) {
 }
 
 void StatusMonitor::task_loop() {
+    // Button state tracking
+    int d0_last_state = HIGH;
+    int d1_last_state = HIGH;
+    int d2_last_state = HIGH;
+    uint32_t d0_press_time = 0;
+    uint32_t d1_press_time = 0;
+    uint32_t d2_press_time = 0;
+    bool d0_pressed = false;
+    bool d1_pressed = false;
+    bool d2_pressed = false;
+    
     while (m_running) {
         uint32_t now = millis();
+        
+        // ===== Handle D0 Button (Pause/Resume) =====
+        int d0_state = digitalRead(BUTTON_D0);
+        if (d0_state != d0_last_state) {
+            d0_press_time = now;
+            d0_pressed = false;
+        }
+        
+        // Check for debounced button press
+        if (d0_state == LOW && !d0_pressed && (now - d0_press_time) >= BUTTON_DEBOUNCE_MS) {
+            d0_pressed = true;
+            // Toggle pause state
+            if (m_rt_logger != nullptr) {
+                if (m_rt_logger->is_storage_paused()) {
+                    m_rt_logger->resume_storage();
+                    Serial.println("[Button] D0: Storage RESUMED");
+                } else {
+                    m_rt_logger->pause_storage();
+                    Serial.println("[Button] D0: Storage PAUSED");
+                }
+            }
+        }
+        d0_last_state = d0_state;
+        
+        // ===== Handle D1 Button (Cycle Display Mode) =====
+        // D1 is pulled LOW by default, goes HIGH when pressed
+        int d1_state = digitalRead(BUTTON_D1);
+        if (d1_state != d1_last_state) {
+            d1_press_time = now;
+            d1_pressed = false;
+            Serial.printf("[D1] State changed: %d\n", d1_state);
+            Serial.flush();
+        }
+        
+        // Check for debounced button press (HIGH state for D1)
+        if (d1_state == HIGH && !d1_pressed && (now - d1_press_time) >= BUTTON_DEBOUNCE_MS) {
+            d1_pressed = true;
+            Serial.println("[Button] D1: Display mode cycled!");
+            // Cycle display mode
+            ST7789Display::cycle_display_mode();
+            
+            // Handle NeoPixel enable/disable based on mode
+            DisplayMode current_mode = ST7789Display::get_display_mode();
+            if (current_mode == DisplayMode::DARK) {
+                NeoPixelStatus::set_enabled(false);
+            } else {
+                NeoPixelStatus::set_enabled(true);
+            }
+        }
+        d1_last_state = d1_state;
+        
+        // ===== Handle D2 Button (Mark Event) =====
+        // D2 is pulled LOW by default, goes HIGH when pressed
+        int d2_state = digitalRead(BUTTON_D2);
+        if (d2_state != d2_last_state) {
+            d2_press_time = now;
+            d2_pressed = false;
+            Serial.printf("[D2] State changed: %d\n", d2_state);
+            Serial.flush();
+        }
+        
+        // Check for debounced button press (HIGH state for D2)
+        if (d2_state == HIGH && !d2_pressed && (now - d2_press_time) >= BUTTON_DEBOUNCE_MS) {
+            d2_pressed = true;
+            // Mark event - log regardless of pause state
+            Serial.println("Event");
+            if (m_rt_logger != nullptr && !m_rt_logger->is_storage_paused()) {
+                m_rt_logger->mark_event();
+                Serial.println("[Button] D2: Event marked in storage!");
+            }
+        }
+        d2_last_state = d2_state;
         
         // Print status at regular intervals
         if (now - m_last_report_time >= m_report_interval_ms) {

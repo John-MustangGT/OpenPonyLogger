@@ -3,6 +3,7 @@
 
 #include "sensor_hal.h"
 #include "rt_logger_thread.h"
+#include "st7789_display.h"
 #include <cstdint>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>

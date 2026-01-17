@@ -13,6 +13,7 @@
 // Static member initialization
 Adafruit_ST7789* ST7789Display::m_tft = nullptr;
 bool ST7789Display::m_initialized = false;
+DisplayMode ST7789Display::m_current_mode = DisplayMode::MAIN_SCREEN;
 
 bool ST7789Display::init() {
     if (m_initialized) {
@@ -64,8 +65,8 @@ bool ST7789Display::init() {
     m_tft->init(135, 240);
     delay(100);
     
-    Serial.println("[TFT] Setting rotation to 3 (landscape)...");
-    m_tft->setRotation(3);
+    Serial.println("[TFT] Setting rotation to 1 (landscape, flipped)...");
+    m_tft->setRotation(1);
     delay(50);
     
     Serial.println("[TFT] Filling screen black...");
@@ -112,6 +113,7 @@ void ST7789Display::update(uint32_t uptime_ms,
                           float gyro_x, float gyro_y, float gyro_z,
                           float battery_soc, float battery_voltage,
                           bool gps_valid, uint32_t sample_count,
+                          bool is_paused,
                           float gps_speed) {
     if (!m_initialized || m_tft == nullptr) return;
     
@@ -133,18 +135,18 @@ void ST7789Display::update(uint32_t uptime_ms,
     snprintf(timestr, sizeof(timestr), "%u:%02u:%02u", hours, minutes, seconds);
     m_tft->println(timestr);
     
-    // Sample count on right side
+    // Sample count on right side with logging state symbol
     m_tft->setTextColor(ST77XX_YELLOW);
     m_tft->setCursor(140, 5);
     
     // Scale samples with K (thousands) or M (millions)
-    char sampstr[12];
+    char sampstr[16];
     if (sample_count >= 1000000) {
-        snprintf(sampstr, sizeof(sampstr), "%.1fM", sample_count / 1000000.0f);
+        snprintf(sampstr, sizeof(sampstr), "%.1fM%s", sample_count / 1000000.0f, is_paused ? "⏸" : "●");
     } else if (sample_count >= 1000) {
-        snprintf(sampstr, sizeof(sampstr), "%.1fK", sample_count / 1000.0f);
+        snprintf(sampstr, sizeof(sampstr), "%.1fK%s", sample_count / 1000.0f, is_paused ? "⏸" : "●");
     } else {
-        snprintf(sampstr, sizeof(sampstr), "%u", sample_count);
+        snprintf(sampstr, sizeof(sampstr), "%u%s", sample_count, is_paused ? "⏸" : "●");
     }
     m_tft->println(sampstr);
     
@@ -161,7 +163,7 @@ void ST7789Display::update(uint32_t uptime_ms,
     m_tft->setCursor(2, 48);
     
     char gyro_line[40];
-    snprintf(gyro_line, sizeof(gyro_line), "G:%+.1f,%+.1f,%+.1f", gyro_x, gyro_y, gyro_z);
+    snprintf(gyro_line, sizeof(gyro_line), "G:%+.1f %+.1f %+.1f", gyro_x, gyro_y, gyro_z);
     m_tft->println(gyro_line);
     
     // ========== ROW 4: TEMPERATURE & BATTERY % (LARGER) ==========
@@ -256,6 +258,91 @@ void ST7789Display::update(uint32_t uptime_ms,
     }
 }
 
+void ST7789Display::cycle_display_mode() {
+    DisplayMode next_mode;
+    
+    switch (m_current_mode) {
+        case DisplayMode::MAIN_SCREEN:
+            next_mode = DisplayMode::INFO_SCREEN;
+            Serial.println("[Display] Switching to INFO screen");
+            break;
+        case DisplayMode::INFO_SCREEN:
+            next_mode = DisplayMode::DARK;
+            Serial.println("[Display] Switching to DARK mode");
+            break;
+        case DisplayMode::DARK:
+            next_mode = DisplayMode::MAIN_SCREEN;
+            Serial.println("[Display] Switching to MAIN screen");
+            break;
+        default:
+            next_mode = DisplayMode::MAIN_SCREEN;
+            break;
+    }
+    
+    set_display_mode(next_mode);
+}
+
+void ST7789Display::set_display_mode(DisplayMode mode) {
+    m_current_mode = mode;
+    
+    if (mode == DisplayMode::DARK) {
+        // Turn off display and backlight
+        m_tft->fillScreen(ST77XX_BLACK);
+        digitalWrite(TFT_BACKLITE, LOW);
+    } else {
+        // Make sure backlight is on
+        digitalWrite(TFT_BACKLITE, HIGH);
+    }
+}
+
+DisplayMode ST7789Display::get_display_mode() {
+    return m_current_mode;
+}
+
+void ST7789Display::show_info_screen(const char* ip_address, const char* ble_name) {
+    if (!m_initialized || m_tft == nullptr) return;
+    
+    // Clear screen
+    m_tft->fillScreen(ST77XX_BLACK);
+    
+    // Title
+    m_tft->setTextColor(ST77XX_CYAN);
+    m_tft->setTextSize(2);
+    m_tft->setCursor(5, 5);
+    m_tft->println("NETWORK INFO");
+    
+    // IP Address
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(5, 30);
+    m_tft->println("IP Address:");
+    m_tft->setTextColor(ST77XX_YELLOW);
+    m_tft->setCursor(5, 40);
+    if (ip_address != nullptr && ip_address[0] != '\0') {
+        m_tft->println(ip_address);
+    } else {
+        m_tft->println("Not available");
+    }
+    
+    // BLE Name
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setCursor(5, 60);
+    m_tft->println("BLE Device:");
+    m_tft->setTextColor(ST77XX_GREEN);
+    m_tft->setCursor(5, 70);
+    if (ble_name != nullptr && ble_name[0] != '\0') {
+        m_tft->println(ble_name);
+    } else {
+        m_tft->println("Not configured");
+    }
+    
+    // Footer
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(5, 120);
+    m_tft->println("Press D1 to cycle");
+}
+
 // ============================================================================
 // NeoPixel Status Indicator Implementation
 // ============================================================================
@@ -269,6 +356,7 @@ NeoPixelStatus::State NeoPixelStatus::m_current_state = NeoPixelStatus::State::B
 uint32_t NeoPixelStatus::m_last_flash_time = 0;
 bool NeoPixelStatus::m_pixel_on = false;
 bool NeoPixelStatus::m_initialized = false;
+bool NeoPixelStatus::m_enabled = true;  // Start enabled
 
 bool NeoPixelStatus::init() {
     if (m_initialized) {
@@ -313,10 +401,10 @@ void NeoPixelStatus::setState(State state) {
             break;
             
         case State::NO_GPS_FIX:
-            // Yellow (will flash)
+            // Yellow (1Hz flash)
             m_pixel->setPixelColor(0, m_pixel->Color(255, 255, 0));
             m_pixel->show();
-            Serial.println("[NeoPixel] State: NO_GPS_FIX (Yellow flashing)");
+            Serial.println("[NeoPixel] State: NO_GPS_FIX (Yellow 1Hz flash)");
             break;
             
         case State::GPS_3D_FIX:
@@ -325,21 +413,33 @@ void NeoPixelStatus::setState(State state) {
             m_pixel->show();
             Serial.println("[NeoPixel] State: GPS_3D_FIX (Green)");
             break;
+            
+        case State::PAUSED:
+            // Yellow (0.2Hz slow flash)
+            m_pixel->setPixelColor(0, m_pixel->Color(255, 255, 0));
+            m_pixel->show();
+            Serial.println("[NeoPixel] State: PAUSED (Yellow 0.2Hz flash)");
+            break;
     }
 }
 
 void NeoPixelStatus::update(uint32_t current_ms) {
-    if (!m_initialized || m_pixel == nullptr) {
+    if (!m_initialized || m_pixel == nullptr || !m_enabled) {
         return;
     }
     
-    // Only handle flashing for NO_GPS_FIX state
-    if (m_current_state != State::NO_GPS_FIX) {
+    // Only handle flashing for states that flash
+    if (m_current_state != State::NO_GPS_FIX && m_current_state != State::PAUSED) {
         return;
     }
+    
+    // Determine which flash interval to use based on state
+    uint32_t flash_interval = (m_current_state == State::PAUSED) 
+                              ? FLASH_INTERVAL_0P2HZ_MS 
+                              : FLASH_INTERVAL_1HZ_MS;
     
     // Check if it's time to toggle the flash
-    if (current_ms - m_last_flash_time >= FLASH_INTERVAL_MS) {
+    if (current_ms - m_last_flash_time >= flash_interval) {
         m_last_flash_time = current_ms;
         m_pixel_on = !m_pixel_on;
         
@@ -364,5 +464,28 @@ void NeoPixelStatus::deinit() {
     }
     m_initialized = false;
     Serial.println("[NeoPixel] NeoPixel deinitialized");
+}
+
+void NeoPixelStatus::set_enabled(bool enabled) {
+    m_enabled = enabled;
+    
+    if (!m_initialized || m_pixel == nullptr) {
+        return;
+    }
+    
+    if (enabled) {
+        Serial.println("[NeoPixel] NeoPixel ENABLED");
+        // Restore the current state
+        setState(m_current_state);
+    } else {
+        Serial.println("[NeoPixel] NeoPixel DISABLED");
+        // Turn off the pixel
+        m_pixel->setPixelColor(0, m_pixel->Color(0, 0, 0));
+        m_pixel->show();
+    }
+}
+
+bool NeoPixelStatus::is_enabled() {
+    return m_enabled;
 }
 

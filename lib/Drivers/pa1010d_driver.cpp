@@ -86,6 +86,14 @@ bool PA1010DDriver::is_valid() const {
 }
 
 bool PA1010DDriver::parse_nmea_sentence(const char* sentence) {
+    // Debug: Print last GPS sentence received
+    static uint32_t last_print_time = 0;
+    uint32_t now = millis();
+    if (now - last_print_time >= 2000) {  // Print every 2 seconds
+        Serial.printf("[GPS] Last sentence: %s\n", sentence);
+        last_print_time = now;
+    }
+    
     if (strncmp(sentence, "$GPRMC", 6) == 0) {
         return parse_gprmc(sentence);
     } else if (strncmp(sentence, "$GPGGA", 6) == 0) {
@@ -154,6 +162,15 @@ bool PA1010DDriver::parse_gprmc(const char* sentence) {
     
     m_data.speed = tmp_speed;
     m_valid = (status == 'A');
+    
+    // Debug: Print parsing result
+    static uint32_t last_parse_debug = 0;
+    uint32_t now = millis();
+    if (now - last_parse_debug >= 2000) {
+        Serial.printf("[GPS] GPRMC: valid=%d, status=%c, lat=%.6f, lon=%.6f, speed=%.1f\n", 
+                      m_valid, status, m_data.latitude, m_data.longitude, m_data.speed);
+        last_parse_debug = now;
+    }
     
     return m_valid;
 }

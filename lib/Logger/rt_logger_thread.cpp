@@ -1,10 +1,13 @@
 #include "rt_logger_thread.h"
+#include "../../../lib/WiFi/include/wifi_manager.h"
 #include <Arduino.h>
 #include <cstring>
+#include <ArduinoJson.h>
 
 RTLoggerThread::RTLoggerThread(SensorManager* sensor_manager, uint32_t update_rate_ms)
     : m_sensor_manager(sensor_manager), m_update_rate_ms(update_rate_ms),
-      m_task_handle(nullptr), m_running(false), m_sample_count(0),
+      m_task_handle(nullptr), m_running(false), m_storage_paused(false),
+      m_mark_event(false), m_sample_count(0),
       m_storage_write_callback(nullptr) {
     memset(&m_last_gps, 0, sizeof(m_last_gps));
     memset(&m_last_accel, 0, sizeof(m_last_accel));
@@ -112,6 +115,55 @@ void RTLoggerThread::task_loop() {
             m_last_battery = m_sensor_manager->get_battery();
             
             m_sample_count++;
+            
+            // Broadcast to WebSocket clients at 5Hz (every 200ms at 10Hz update rate)
+            // With 100ms update rate (10Hz), this broadcasts every other update
+            static uint32_t last_broadcast_ms = 0;
+            uint32_t now_ms = millis();
+            
+            if (WiFiManager::is_initialized() && (now_ms - last_broadcast_ms) >= 200) {
+                last_broadcast_ms = now_ms;
+                
+                // Create JSON document with sensor data
+                // Use JsonDocument to avoid dynamic allocation
+                JsonDocument doc;
+                doc["type"] = "sensor";
+                doc["uptime_ms"] = now_ms;
+                doc["sample_count"] = m_sample_count;
+                doc["is_paused"] = m_storage_paused;
+                
+                // GPS data
+                doc["gps_valid"] = m_last_gps.valid;
+                doc["latitude"] = m_last_gps.latitude;
+                doc["longitude"] = m_last_gps.longitude;
+                doc["altitude"] = m_last_gps.altitude;
+                doc["speed"] = m_last_gps.speed;
+                doc["satellites"] = m_last_gps.satellites;
+                
+                // Accelerometer
+                doc["accel_x"] = m_last_accel.x;
+                doc["accel_y"] = m_last_accel.y;
+                doc["accel_z"] = m_last_accel.z;
+                doc["temperature"] = m_last_accel.temperature;
+                
+                // Gyroscope
+                doc["gyro_x"] = m_last_gyro.x;
+                doc["gyro_y"] = m_last_gyro.y;
+                doc["gyro_z"] = m_last_gyro.z;
+                
+                // Battery data
+                doc["battery_soc"] = m_last_battery.state_of_charge;
+                doc["battery_voltage"] = m_last_battery.voltage;
+                doc["battery_current"] = m_last_battery.current;
+                doc["battery_temp"] = m_last_battery.temperature / 100.0f;
+                
+                // Serialize and broadcast
+                char json_buffer[512];
+                size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
+                if (n > 0) {
+                    WiFiManager::broadcast_json(json_buffer);
+                }
+            }
         } else {
             // Debug: Report update failure periodically
             static uint32_t last_error_report = 0;
@@ -126,4 +178,26 @@ void RTLoggerThread::task_loop() {
         // Delay until next update
         vTaskDelay(delay_ticks);
     }
+}
+
+void RTLoggerThread::pause_storage() {
+    m_storage_paused = true;
+    Serial.println("[RTLogger] Storage paused");
+    Serial.flush();
+}
+
+void RTLoggerThread::resume_storage() {
+    m_storage_paused = false;
+    Serial.println("[RTLogger] Storage resumed");
+    Serial.flush();
+}
+
+bool RTLoggerThread::is_storage_paused() const {
+    return m_storage_paused;
+}
+
+void RTLoggerThread::mark_event() {
+    m_mark_event = true;
+    Serial.println("[RTLogger] Event marked");
+    Serial.flush();
 }
