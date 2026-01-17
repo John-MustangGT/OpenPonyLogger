@@ -3,16 +3,37 @@
 
 #include <NimBLEDevice.h>
 #include "obd_data.h"
+#include <vector>
+
+/**
+ * @brief OBD PID configuration with polling rate
+ */
+struct obd_pid_config_t {
+    uint8_t pid;                  // Parameter ID (0x00-0xFF)
+    uint32_t poll_interval_ms;    // How often to poll this PID (milliseconds)
+    uint32_t last_poll_ms;        // Last time this PID was polled
+    const char* description;      // Human-readable description
+};
 
 /**
  * @brief vgate iCar 2 Pro BLE Central interface
  * Connects to the BLE OBD-II scanner and reads OBD parameters
  * 
- * BLE Service UUIDs for vgate iCar 2 Pro:
- * - Device Name: "vgate iCar2Pro" (typically)
- * - Service UUID: 0xFFE0
- * - RX Characteristic: 0xFFE1 (read/notify)
- * - TX Characteristic: 0xFFE2 (write)
+ * Device Information:
+ * - Device Name: "vgate iCar2Pro" or similar (searches for "iCar" or "vgate")
+ * - Typical MAC: AA:BB:CC:DD:EE:FF (random)
+ * - BLE Standard: BLE 4.0/4.1
+ * 
+ * BLE Service/Characteristic UUIDs (reversed notation):
+ * - Service UUID: 0xFFE0 (proprietary vgate service)
+ * - RX Char: 0xFFE1 (read/notify from device) 
+ * - TX Char: 0xFFE2 (write to device)
+ * 
+ * Connection Notes:
+ * - Device advertises with local name containing "iCar" or "vgate"
+ * - No authentication required (open connection)
+ * - Connection is stable at 1-2 MTU (default 23 bytes)
+ * - Requires 500ms+ between writes for reliable communication
  */
 class IcarBleDriver {
 public:
@@ -24,7 +45,8 @@ public:
 
     /**
      * @brief Start scanning for vgate iCar 2 Pro device
-     * @return true if scan started successfully
+     * Automatically connects when device is found
+     * @return true if device found and connected
      */
     static bool start_scan();
 
@@ -35,8 +57,8 @@ public:
 
     /**
      * @brief Connect to a specific device by address
-     * @param address BLE device address string
-     * @return true if connection attempt made
+     * @param address BLE device address string (format: "AA:BB:CC:DD:EE:FF")
+     * @return true if connection successful
      */
     static bool connect(const char* address);
 
@@ -51,9 +73,9 @@ public:
     static bool is_connected();
 
     /**
-     * @brief Update OBD data by querying device
-     * Queries engine RPM, speed, temperature, etc.
-     * @return true if update successful
+     * @brief Update OBD data by polling configured PIDs
+     * Only polls PIDs whose interval has elapsed
+     * @return true if any PID was updated
      */
     static bool update();
 
@@ -63,7 +85,32 @@ public:
     static obd_data_t get_data();
 
     /**
-     * @brief Request a specific PID from the device
+     * @brief Configure PID polling
+     * @param pid Parameter ID
+     * @param poll_interval_ms Polling interval in milliseconds
+     * @param description Human-readable description
+     * @return true if PID added/updated
+     */
+    static bool add_pid(uint8_t pid, uint32_t poll_interval_ms, const char* description);
+
+    /**
+     * @brief Remove a PID from polling list
+     * @param pid Parameter ID to remove
+     */
+    static void remove_pid(uint8_t pid);
+
+    /**
+     * @brief Get all configured PIDs
+     */
+    static const std::vector<obd_pid_config_t>& get_configured_pids();
+
+    /**
+     * @brief Clear all configured PIDs
+     */
+    static void clear_all_pids();
+
+    /**
+     * @brief Request a specific PID from the device (manual query)
      * @param pid Parameter ID (0x01-0xFF for standard PIDs)
      * @return true if request sent
      */
@@ -85,6 +132,7 @@ private:
     static char m_device_address[18];
     static NimBLERemoteCharacteristic* m_rx_char;
     static NimBLERemoteCharacteristic* m_tx_char;
+    static std::vector<obd_pid_config_t> m_configured_pids;
 };
 
 #endif // ICAR_BLE_DRIVER_H
