@@ -56,6 +56,12 @@ public:
      * @param gps_valid GPS has valid fix
      * @param sample_count Number of samples logged
      * @param is_paused Whether logging is paused
+     * @param gps_latitude Latitude in decimal degrees (if valid)
+     * @param gps_longitude Longitude in decimal degrees (if valid)
+     * @param gps_altitude Altitude in meters (if valid)
+     * @param gps_hour GPS hour (0-23)
+     * @param gps_minute GPS minute (0-59)
+     * @param gps_second GPS second (0-59)
      * @param gps_speed Speed in knots (if valid)
      */
     static void update(uint32_t uptime_ms,
@@ -65,6 +71,12 @@ public:
                       float battery_soc, float battery_voltage,
                       bool gps_valid, uint32_t sample_count,
                       bool is_paused = false,
+                      double gps_latitude = 0.0,
+                      double gps_longitude = 0.0,
+                      double gps_altitude = 0.0,
+                      uint8_t gps_hour = 0,
+                      uint8_t gps_minute = 0,
+                      uint8_t gps_second = 0,
                       float gps_speed = 0.0f);
 
     /**

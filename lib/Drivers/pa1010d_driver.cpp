@@ -94,9 +94,8 @@ bool PA1010DDriver::parse_nmea_sentence(const char* sentence) {
         last_print_time = now;
     }
     
-    if (strncmp(sentence, "$GPRMC", 6) == 0) {
-        return parse_gprmc(sentence);
-    } else if (strncmp(sentence, "$GPGGA", 6) == 0) {
+    // Only process GNGGA sentences (GPS+GLONASS position fix)
+    if (strncmp(sentence, "$GNGGA", 6) == 0) {
         return parse_gpgga(sentence);
     }
     return false;
@@ -162,6 +161,7 @@ bool PA1010DDriver::parse_gprmc(const char* sentence) {
     
     m_data.speed = tmp_speed;
     m_valid = (status == 'A');
+    m_data.valid = m_valid;  // Update the struct field too
     
     // Debug: Print parsing result
     static uint32_t last_parse_debug = 0;
@@ -176,92 +176,188 @@ bool PA1010DDriver::parse_gprmc(const char* sentence) {
 }
 
 bool PA1010DDriver::parse_gpgga(const char* sentence) {
-    // Format: $GPGGA,hhmmss.ss,llll.ll,a,yyyyy.yy,a,x,xx,x.x,x.x,M,x.x,M,,*hh
-    // Example: $GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*42
+    // Format: $GNGGA,hhmmss.ss,llll.ll,a,yyyyy.yy,a,x,xx,x.x,x.x,M,x.x,M,,*hh
+    // Example: $GNGGA,014153.377,4219.9872,N,07126.1921,W,1,4,1.69,69.9,M,-33.8,M,,*4B
+    //          0      1          2         3  4         5  6 7  8    9    10
     
+    // For now, just check if we can parse the basic structure
+    // Focus on: time, lat, lon, fix_quality, sats, altitude
+    
+    if (!sentence || sentence[0] != '$') {
+        return false;
+    }
+    
+    // Skip the sentence header
     const char* pos = strchr(sentence, ',');
-    
     if (!pos) return false;
     
-    // Skip time
-    pos = strchr(pos + 1, ',');
-    
-    // Skip latitude
-    pos = strchr(pos + 1, ',');
-    pos = strchr(pos + 1, ',');
-    
-    // Skip longitude
-    pos = strchr(pos + 1, ',');
-    pos = strchr(pos + 1, ',');
-    
-    // Fix quality
+    // Time field - skip it for now
     pos++;
-    int fix_quality = atoi(pos);
     
-    // Skip to satellite count
-    pos = strchr(pos, ',') + 1;
-    sscanf(pos, "%hhu", &m_data.satellites);
+    // Latitude
+    double tmp_lat = 0;
+    pos = strchr(pos, ',');
+    if (!pos) return false;
+    pos++;
+    int lat_scan = sscanf(pos, "%lf", &tmp_lat);
+    if (lat_scan != 1) return false;
     
-    // Skip dilution
-    pos = strchr(pos, ',') + 1;
+    // Latitude direction (N/S)
+    pos = strchr(pos, ',');
+    if (!pos) return false;
+    pos++;
+    char tmp_lat_dir = *pos;
+    
+    // Longitude
+    double tmp_lon = 0;
+    pos = strchr(pos, ',');
+    if (!pos) return false;
+    pos++;
+    int lon_scan = sscanf(pos, "%lf", &tmp_lon);
+    if (lon_scan != 1) return false;
+    
+    // Longitude direction (E/W)
+    pos = strchr(pos, ',');
+    if (!pos) return false;
+    pos++;
+    char tmp_lon_dir = *pos;
+    
+    // Fix quality (critical field)
+    int fix_quality = 0;
+    pos = strchr(pos, ',');
+    if (!pos) return false;
+    pos++;
+    int fix_scan = sscanf(pos, "%d", &fix_quality);
+    if (fix_scan != 1) return false;
+    
+    // Satellite count
+    uint8_t sats = 0;
+    pos = strchr(pos, ',');
+    if (!pos) return false;
+    pos++;
+    sscanf(pos, "%hhu", &sats);
+    
+    // Skip dilution (HDOP)
+    pos = strchr(pos, ',');
+    if (!pos) return false;
     
     // Altitude
-    pos = strchr(pos, ',') + 1;
-    sscanf(pos, "%lf", &m_data.altitude);
+    double alt = 0;
+    pos = strchr(pos, ',');
+    if (!pos) return false;
+    pos++;
+    sscanf(pos, "%lf", &alt);
     
+    // Convert latitude and longitude from NMEA format (ddmm.mmmm)
+    int lat_deg = (int)(tmp_lat / 100.0);
+    m_data.latitude = lat_deg + (tmp_lat - lat_deg * 100.0) / 60.0;
+    if (tmp_lat_dir == 'S') {
+        m_data.latitude = -m_data.latitude;
+    }
+    
+    int lon_deg = (int)(tmp_lon / 100.0);
+    m_data.longitude = lon_deg + (tmp_lon - lon_deg * 100.0) / 60.0;
+    if (tmp_lon_dir == 'W') {
+        m_data.longitude = -m_data.longitude;
+    }
+    
+    m_data.altitude = alt;
+    m_data.satellites = sats;
     m_valid = (fix_quality > 0);
+    m_data.valid = m_valid;
+    
+    // Debug: Print parsing result
+    static uint32_t last_parse_debug_gga = 0;
+    uint32_t now = millis();
+    if (now - last_parse_debug_gga >= 2000) {
+        Serial.printf("[GPS] GNGGA: valid=%d, fix_quality=%d, sats=%d, alt=%.1f, lat=%.6f, lon=%.6f\n", 
+                      m_valid, fix_quality, sats, alt, m_data.latitude, m_data.longitude);
+        last_parse_debug_gga = now;
+    }
     
     return m_valid;
 }
 
 bool PA1010DDriver::read_i2c_nmea_buffer() {
-    // PA1010D I2C protocol: Read from I2C buffer
-    // Device stores NMEA sentences in an internal buffer
-    // Read format: 2 bytes length + up to 255 bytes NMEA data
+    // PA1010D I2C protocol: Simple streaming read
+    // The GPS continuously outputs NMEA sentences over I2C
+    // Just read available bytes directly - no register addressing needed
     
     if (!m_wire) return false;
     
     static char sentence_buffer[256];
+    static int buffer_pos = 0;
+    static uint32_t last_i2c_debug = 0;
+    static uint32_t read_attempts = 0;
+    static uint32_t successful_sentences = 0;
     
-    // Request data from PA1010D
-    // Address pointer at 0xFF indicates we want the NMEA buffer
-    m_wire->beginTransmission(m_i2c_addr);
-    m_wire->write(0xFF);  // NMEA buffer register
-    if (m_wire->endTransmission() != 0) {
-        return false;  // I2C transmission error
+    read_attempts++;
+    
+    // Request up to 32 bytes at a time from the GPS
+    size_t bytes_available = m_wire->requestFrom(m_i2c_addr, (size_t)32);
+    
+    if (bytes_available == 0) {
+        uint32_t now = millis();
+        if (now - last_i2c_debug >= 2000) {
+            Serial.printf("[GPS-I2C] No bytes available (attempts=%u, sentences=%u)\n", 
+                          read_attempts, successful_sentences);
+            last_i2c_debug = now;
+        }
+        return true;  // No data available yet
     }
     
-    // Read the length (2 bytes, big-endian)
-    m_wire->requestFrom(m_i2c_addr, (size_t)2);
-    if (m_wire->available() < 2) {
-        return true;  // No data available yet, but that's OK (GPS is warming up)
+    // Read available bytes into our sentence buffer
+    while (m_wire->available() && buffer_pos < 255) {
+        char c = m_wire->read();
+        
+        // Look for sentence start
+        if (c == '$') {
+            buffer_pos = 0;  // Start new sentence
+        }
+        
+        sentence_buffer[buffer_pos++] = c;
+        
+        // Check for sentence end (newline or carriage return)
+        if (c == '\n' || c == '\r') {
+            if (buffer_pos > 1) {  // We have a complete sentence
+                sentence_buffer[buffer_pos] = '\0';
+                
+                // Remove any trailing CR/LF
+                while (buffer_pos > 0 && (sentence_buffer[buffer_pos-1] == '\n' || 
+                                          sentence_buffer[buffer_pos-1] == '\r')) {
+                    sentence_buffer[--buffer_pos] = '\0';
+                }
+                
+                uint32_t now = millis();
+                if (now - last_i2c_debug >= 2000) {
+                    Serial.printf("[GPS-I2C] Read sentence: %d chars (attempts=%u, sentences=%u)\n", 
+                                  buffer_pos, read_attempts, successful_sentences);
+                    last_i2c_debug = now;
+                }
+                
+                // Parse the NMEA sentence if it starts with '$'
+                if (sentence_buffer[0] == '$') {
+                    successful_sentences++;
+                    parse_nmea_sentence(sentence_buffer);
+                }
+                
+                buffer_pos = 0;  // Reset for next sentence
+            } else {
+                buffer_pos = 0;  // Empty line, reset
+            }
+        }
     }
     
-    uint16_t length = (m_wire->read() << 8) | m_wire->read();
-    
-    // Limit length to avoid buffer overflow
-    if (length == 0 || length > 255) {
-        return true;  // Invalid length, but bus is OK
+    // Prevent buffer overflow
+    if (buffer_pos >= 255) {
+        uint32_t now = millis();
+        if (now - last_i2c_debug >= 2000) {
+            Serial.printf("[GPS-I2C] Buffer overflow, resetting (attempts=%u, sentences=%u)\n", 
+                          read_attempts, successful_sentences);
+            last_i2c_debug = now;
+        }
+        buffer_pos = 0;
     }
     
-    // Read the NMEA sentence
-    m_wire->requestFrom(m_i2c_addr, (size_t)length);
-    
-    int bytes_read = 0;
-    while (m_wire->available() && bytes_read < length) {
-        sentence_buffer[bytes_read++] = m_wire->read();
-    }
-    
-    if (bytes_read != length) {
-        return true;  // Incomplete read, but I2C is functional
-    }
-    
-    sentence_buffer[bytes_read] = '\0';
-    
-    // Parse the NMEA sentence if it's valid
-    if (sentence_buffer[0] == '$') {
-        parse_nmea_sentence(sentence_buffer);
-    }
-    
-    return true;  // Successfully queried I2C, even if no valid sentence yet
+    return true;  // Successfully queried I2C
 }

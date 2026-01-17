@@ -114,6 +114,12 @@ void ST7789Display::update(uint32_t uptime_ms,
                           float battery_soc, float battery_voltage,
                           bool gps_valid, uint32_t sample_count,
                           bool is_paused,
+                          double gps_latitude,
+                          double gps_longitude,
+                          double gps_altitude,
+                          uint8_t gps_hour,
+                          uint8_t gps_minute,
+                          uint8_t gps_second,
                           float gps_speed) {
     if (!m_initialized || m_tft == nullptr) return;
     
@@ -166,40 +172,23 @@ void ST7789Display::update(uint32_t uptime_ms,
     snprintf(gyro_line, sizeof(gyro_line), "G:%+.1f %+.1f %+.1f", gyro_x, gyro_y, gyro_z);
     m_tft->println(gyro_line);
     
-    // ========== ROW 4: TEMPERATURE & BATTERY % (LARGER) ==========
-    float display_temp = convert_temperature(temp);
-    
+    // ========== ROW 4: GPS COORDINATES (LATITUDE LONGITUDE ALTITUDE) ==========
     m_tft->setCursor(2, 68);
-    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setTextSize(2);
     
-    // Color temperature based on value
-    uint16_t temp_color = ST77XX_CYAN;
-    if (display_temp > 85) {
-        temp_color = ST77XX_RED;
-    } else if (display_temp > 75) {
-        temp_color = ST77XX_ORANGE;
+    if (gps_valid) {
+        m_tft->setTextColor(ST77XX_GREEN);
+        char gps_line[40];
+        // Format: +DDD.D +DDD.D ALT
+        snprintf(gps_line, sizeof(gps_line), "%+6.1f %+7.1f %5.0fm", 
+                 gps_latitude, gps_longitude, gps_altitude);
+        m_tft->println(gps_line);
+    } else {
+        m_tft->setTextColor(ST77XX_RED);
+        m_tft->println("No GPS Fix");
     }
     
-    char temp_str[20];
-    snprintf(temp_str, sizeof(temp_str), "T:%+.1f%s", display_temp, get_temp_unit());
-    m_tft->setTextColor(temp_color);
-    m_tft->print(temp_str);
-    
-    // Battery percentage (larger)
-    uint16_t batt_color = ST77XX_GREEN;
-    if (battery_soc < 20) {
-        batt_color = ST77XX_RED;
-    } else if (battery_soc < 50) {
-        batt_color = ST77XX_ORANGE;
-    }
-    m_tft->setTextColor(batt_color);
-    m_tft->print("  B:");
-    
-    char batt_str[10];
-    snprintf(batt_str, sizeof(batt_str), "%.0f%%", battery_soc);
-    m_tft->println(batt_str);
-    
-    // ========== ROW 5: GPS STATUS (Large) ==========
+    // ========== ROW 5: GPS SPEED STATUS ==========
     m_tft->setTextSize(2);
     m_tft->setCursor(2, 88);
     
@@ -207,14 +196,14 @@ void ST7789Display::update(uint32_t uptime_ms,
         m_tft->setTextColor(ST77XX_GREEN);
         float display_speed = convert_speed(gps_speed);
         char gps_str[20];
-        snprintf(gps_str, sizeof(gps_str), "GPS:%.1f%s", display_speed, get_speed_unit());
+        snprintf(gps_str, sizeof(gps_str), "Spd:%.1f%s", display_speed, get_speed_unit());
         m_tft->println(gps_str);
     } else {
-        m_tft->setTextColor(ST77XX_RED);
-        m_tft->println("GPS:NO FIX");
+        m_tft->setTextColor(ST77XX_YELLOW);
+        m_tft->println("GPS Waiting");
     }
     
-    // ========== BOTTOM: BATTERY INDICATOR & CHARGE STATUS ==========
+    // ========== BOTTOM: GPS TIME & BATTERY INDICATOR ==========
     m_tft->setTextSize(1);
     m_tft->setTextColor(ST77XX_WHITE);
     
@@ -246,15 +235,18 @@ void ST7789Display::update(uint32_t uptime_ms,
     snprintf(pct_str, sizeof(pct_str), "%.0f%%", battery_soc);
     m_tft->print(pct_str);
     
-    // Charging indicator (lightning bolt or +/- symbol)
-    // Assuming discharging by default; could use battery current if available
+    // Display GPS time on the right side (if valid)
     m_tft->setCursor(75, bar_y + 1);
-    if (battery_soc < 100) {
-        m_tft->setTextColor(ST77XX_YELLOW);
-        m_tft->print("↓");  // Discharging
-    } else {
+    if (gps_valid) {
         m_tft->setTextColor(ST77XX_CYAN);
-        m_tft->print("~");  // Full/Idle
+        // Build time string to avoid truncation warning
+        String time_str = String(gps_hour < 10 ? "0" : "") + String(gps_hour) + ":" +
+                         String(gps_minute < 10 ? "0" : "") + String(gps_minute) + ":" +
+                         String(gps_second < 10 ? "0" : "") + String(gps_second);
+        m_tft->print(time_str.c_str());
+    } else {
+        m_tft->setTextColor(ST77XX_YELLOW);
+        m_tft->print("--:--:--");
     }
 }
 
