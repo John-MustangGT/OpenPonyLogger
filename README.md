@@ -35,6 +35,8 @@ This is an open-source project. Contributions welcome:
 - Documentation improvements
 - Vehicle-specific CAN definitions
 
+For contributor workflow, build steps, and repo hygiene, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 MIT 
