@@ -35,6 +35,8 @@ This is an open-source project. Contributions welcome:
 - Documentation improvements
 - Vehicle-specific CAN definitions
 
+For contributor workflow, build steps, and repo hygiene, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 MIT 
@@ -56,6 +58,17 @@ For detailed information about the logging system, please refer to:
 - **[Log Format Specification](docs/LOG_FORMAT.md)** - Complete logging format including block headers, session headers, NVS schema, and write/recovery semantics
 - **[Record Schema](docs/RECORD_SCHEMA.md)** - Canonical C struct definitions for all record types (IMU, GPS, CAN, COMPASS)
 - **[Project Checklist](docs/PROJECT_CHECKLIST.md)** - V2 prototype implementation tasks and design decisions
+- Additional references in `docs/`:
+	- [docs/TECHNICAL_IMPLEMENTATION.md](docs/TECHNICAL_IMPLEMENTATION.md)
+	- [docs/RT_LOGGER_ARCHITECTURE.md](docs/RT_LOGGER_ARCHITECTURE.md)
+	- [docs/UNITS_AND_DISPLAY.md](docs/UNITS_AND_DISPLAY.md)
+	- [docs/NEOPIXEL_QUICK_REFERENCE.md](docs/NEOPIXEL_QUICK_REFERENCE.md)
+	- [docs/IMPROVEMENTS_SUMMARY.md](docs/IMPROVEMENTS_SUMMARY.md)
+	- [docs/IMPLEMENTATION_CHECKLIST.md](docs/IMPLEMENTATION_CHECKLIST.md)
+	- [docs/PROJECT_COMPLETION_SUMMARY.md](docs/PROJECT_COMPLETION_SUMMARY.md)
+	- [docs/BEFORE_AND_AFTER.md](docs/BEFORE_AND_AFTER.md)
+	- [docs/VISUAL_SUMMARY.md](docs/VISUAL_SUMMARY.md)
+	- [docs/BUTTON_CONTROL.md](docs/BUTTON_CONTROL.md)
 
 ## Appendix B: Ford Mustang S197 CAN Bus Information
 
