@@ -45,7 +45,6 @@
 
 # Ignore VS Code files and directories
 .vscode/
-
 # macOS finder files
 .DS_Store
 
