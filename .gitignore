@@ -40,6 +40,8 @@
 # debug information files
 *.dwo
 
-# platformIO Build
-.pio/
+# Ignore VS Code files and directories
 .vscode/
+
+# Ignore PlatformIO build and library directories
+.pio/
