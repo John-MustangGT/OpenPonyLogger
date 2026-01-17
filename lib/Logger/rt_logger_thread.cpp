@@ -4,8 +4,12 @@
 #include <cstring>
 #include <ArduinoJson.h>
 
-RTLoggerThread::RTLoggerThread(SensorManager* sensor_manager, uint32_t update_rate_ms)
+RTLoggerThread::RTLoggerThread(SensorManager* sensor_manager, uint32_t update_rate_ms,
+                               uint32_t gps_rate_ms, uint32_t imu_rate_ms, uint32_t obd_rate_ms)
     : m_sensor_manager(sensor_manager), m_update_rate_ms(update_rate_ms),
+      m_gps_rate_ms(gps_rate_ms == 0 ? update_rate_ms : gps_rate_ms),
+      m_imu_rate_ms(imu_rate_ms == 0 ? update_rate_ms : imu_rate_ms),
+      m_obd_rate_ms(obd_rate_ms == 0 ? update_rate_ms : obd_rate_ms),
       m_task_handle(nullptr), m_running(false), m_storage_paused(false),
       m_mark_event(false), m_sample_count(0),
       m_storage_write_callback(nullptr) {
@@ -96,30 +100,57 @@ void RTLoggerThread::task_wrapper(void* arg) {
 void RTLoggerThread::task_loop() {
     const TickType_t delay_ticks = pdMS_TO_TICKS(m_update_rate_ms);
     
+    // Timing trackers for individual sensors
+    uint32_t last_gps_update = 0;
+    uint32_t last_imu_update = 0;
+    uint32_t last_obd_update = 0;
+    
     // Debug: Print once at start
     static bool first_run = true;
     if (first_run) {
-        Serial.println("RT Logger thread loop started");
+        Serial.printf("RT Logger thread started - Main: %dms, GPS: %dms, IMU: %dms, OBD: %dms\n",
+                     m_update_rate_ms, m_gps_rate_ms, m_imu_rate_ms, m_obd_rate_ms);
         Serial.flush();
         first_run = false;
     }
     
     while (m_running) {
-        // Update all sensors through HAL
-        if (m_sensor_manager->update_all()) {
-            // Capture latest sensor data
+        uint32_t now_ms = millis();
+        bool any_updated = false;
+        
+        // Update GPS if interval elapsed
+        if (now_ms - last_gps_update >= m_gps_rate_ms) {
+            m_sensor_manager->update_gps();
             m_last_gps = m_sensor_manager->get_gps();
+            last_gps_update = now_ms;
+            any_updated = true;
+        }
+        
+        // Update IMU if interval elapsed
+        if (now_ms - last_imu_update >= m_imu_rate_ms) {
+            m_sensor_manager->update_imu();
             m_last_accel = m_sensor_manager->get_accel();
             m_last_gyro = m_sensor_manager->get_gyro();
             m_last_compass = m_sensor_manager->get_comp();
-            m_last_battery = m_sensor_manager->get_battery();
-            
+            last_imu_update = now_ms;
+            any_updated = true;
+        }
+        
+        // Update OBD if interval elapsed (handled separately in OBD driver)
+        if (now_ms - last_obd_update >= m_obd_rate_ms) {
+            // OBD updates would go here when implemented
+            last_obd_update = now_ms;
+        }
+        
+        // Always update battery (low frequency sensor)
+        m_sensor_manager->update_battery();
+        m_last_battery = m_sensor_manager->get_battery();
+        
+        if (any_updated) {
             m_sample_count++;
             
-            // Broadcast to WebSocket clients at 5Hz (every 200ms at 10Hz update rate)
-            // With 100ms update rate (10Hz), this broadcasts every other update
+            // Broadcast to WebSocket clients at 5Hz (every 200ms)
             static uint32_t last_broadcast_ms = 0;
-            uint32_t now_ms = millis();
             
             if (WiFiManager::is_initialized() && (now_ms - last_broadcast_ms) >= 200) {
                 last_broadcast_ms = now_ms;
@@ -163,15 +194,6 @@ void RTLoggerThread::task_loop() {
                 if (n > 0) {
                     WiFiManager::broadcast_json(json_buffer);
                 }
-            }
-        } else {
-            // Debug: Report update failure periodically
-            static uint32_t last_error_report = 0;
-            uint32_t now = millis();
-            if (now - last_error_report > 5000) {
-                Serial.println("WARNING: update_all() returned false");
-                Serial.flush();
-                last_error_report = now;
             }
         }
         

@@ -91,6 +91,36 @@ bool SensorManager::update_all() {
     return success;
 }
 
+bool SensorManager::update_gps() {
+    if (m_gps) {
+        return m_gps->update();
+    }
+    return false;
+}
+
+bool SensorManager::update_imu() {
+    bool success = true;
+    
+    if (m_accel) {
+        success &= m_accel->update();
+    }
+    if (m_gyro) {
+        success &= m_gyro->update();
+    }
+    if (m_compass) {
+        success &= m_compass->update();
+    }
+    
+    return success;
+}
+
+bool SensorManager::update_battery() {
+    if (m_battery) {
+        return m_battery->update();
+    }
+    return false;
+}
+
 gps_data_t SensorManager::get_gps() const {
     if (m_gps) {
         return m_gps->get_data();

@@ -62,6 +62,21 @@ private:
     static void handle_root(AsyncWebServerRequest* request);
     
     /**
+     * @brief Handle HTTP request for configuration page
+     */
+    static void handle_config_get(AsyncWebServerRequest* request);
+    
+    /**
+     * @brief Handle HTTP POST for configuration updates
+     */
+    static void handle_config_post(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total);
+    
+    /**
+     * @brief Handle HTTP request for about page
+     */
+    static void handle_about(AsyncWebServerRequest* request);
+    
+    /**
      * @brief Handle WebSocket events (connect, disconnect, message)
      */
     static void handle_websocket_event(AsyncWebSocket* server, AsyncWebSocketClient* client,
