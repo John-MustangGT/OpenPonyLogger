@@ -90,8 +90,8 @@ void StatusMonitor::print_status_now() {
         
         // GPS Status
         if (gps.valid) {
-            snprintf(buffer, sizeof(buffer), "║ GPS: VALID - Lat:%.6f Lon:%.6f Alt:%.1fm Sats:%d",
-                     gps.latitude, gps.longitude, gps.altitude, gps.satellites);
+            snprintf(buffer, sizeof(buffer), "║ GPS: VALID - Lat:%.6f Lon:%.6f Alt:%.1fm Sats:%d Time:%02u:%02u:%02u",
+                     gps.latitude, gps.longitude, gps.altitude, gps.satellites, gps.hour, gps.minute, gps.second);
             Serial.println(buffer);
         } else {
             Serial.println("║ GPS: NO FIX");
@@ -135,7 +135,10 @@ void StatusMonitor::print_status_now() {
                 gyro.x, gyro.y, gyro.z,
                 battery.state_of_charge, battery.voltage,
                 gps.valid, sample_count,
-                is_paused, gps.speed
+                is_paused,
+                gps.latitude, gps.longitude, gps.altitude,
+                gps.hour, gps.minute, gps.second,
+                gps.speed
             );
         } else if (current_mode == DisplayMode::INFO_SCREEN) {
             // Show IP/BLE information
