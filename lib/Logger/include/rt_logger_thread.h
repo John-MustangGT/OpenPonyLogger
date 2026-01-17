@@ -75,12 +75,35 @@ public:
      * @brief Force a storage write and report via callback
      */
     void trigger_storage_write();
+    
+    /**
+     * @brief Pause storage writes (data still collected, just not written)
+     */
+    void pause_storage();
+    
+    /**
+     * @brief Resume storage writes
+     */
+    void resume_storage();
+    
+    /**
+     * @brief Check if storage is paused
+     * @return true if paused
+     */
+    bool is_storage_paused() const;
+    
+    /**
+     * @brief Mark next frame as an event (e.g., lap start, race start)
+     */
+    void mark_event();
 
 private:
     SensorManager* m_sensor_manager;
     uint32_t m_update_rate_ms;
     TaskHandle_t m_task_handle;
     bool m_running;
+    bool m_storage_paused;      // Pause storage writes
+    bool m_mark_event;          // Mark next frame as event
     
     // Latest sensor data
     gps_data_t m_last_gps;

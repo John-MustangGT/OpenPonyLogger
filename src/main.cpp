@@ -9,6 +9,7 @@
 #include "storage_reporter.h"
 #include "status_monitor.h"
 #include "st7789_display.h"
+#include "wifi_manager.h"
 
 // Hardware configuration
 #define GPS_TX_PIN          17
@@ -19,6 +20,11 @@
 #define GPS_I2C_ADDR        0x10
 #define IMU_I2C_ADDR        0x69
 #define BATTERY_I2C_ADDR    0x36
+
+// Button Configuration (GPIO pins)
+#define BUTTON_D0           0   // Bottom button - Pause/Resume storage
+#define BUTTON_D1           1   // Middle button - Cycle display mode
+#define BUTTON_D2           2   // Top button - Mark event
 
 // GPS Communication Mode Selection
 // Set to true for I2C (default), false for UART
@@ -201,6 +207,15 @@ void setup() {
         Serial.flush();
     }
     
+    // Initialize buttons
+    Serial.println("▶ Initializing buttons...");
+    Serial.flush();
+    pinMode(BUTTON_D0, INPUT_PULLUP);  // D0: Pause/Resume (pulled HIGH, goes LOW when pressed)
+    pinMode(BUTTON_D1, INPUT);         // D1: Cycle display (pulled LOW by default, goes HIGH when pressed)
+    pinMode(BUTTON_D2, INPUT);         // D2: Mark Event (pulled LOW by default, goes HIGH when pressed)
+    Serial.println("✓ Buttons initialized (D0: GPIO0-pullup, D1: GPIO1-wake, D2: GPIO2-wake)");
+    Serial.flush();
+    
     // Initialize sensors
     Serial.println("About to call init_sensors()");
     Serial.flush();
@@ -245,6 +260,17 @@ void setup() {
     }
     
     Serial.println("✓ RT Logger thread started");
+    Serial.flush();
+    
+    // Initialize WiFi AP mode with WebSocket server
+    Serial.println("▶ Initializing WiFi AP mode...");
+    Serial.flush();
+    if (WiFiManager::init()) {
+        Serial.printf("✓ WiFi AP initialized - SSID: %s\n", WiFiManager::get_ssid().c_str());
+        Serial.printf("  IP: 192.168.4.1 | WebSocket: /ws\n");
+    } else {
+        Serial.println("✗ WARNING: WiFi AP initialization failed, continuing without WiFi...");
+    }
     Serial.flush();
     
     Serial.println("▶ Starting Status Monitor Thread (Core 0)...");

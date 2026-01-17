@@ -7,6 +7,15 @@
 #include <Adafruit_NeoPixel.h>
 
 /**
+ * @brief Display modes for cycling through screens
+ */
+enum class DisplayMode {
+    MAIN_SCREEN,        // Normal sensor data display
+    INFO_SCREEN,        // IP/BLE information
+    DARK                // Display off, backlight disabled, NeoPixel disabled
+};
+
+/**
  * @brief ST7789 TFT Display driver for Adafruit ESP32-S3 Feather Reverse TFT
  * Display: 1.14" IPS LCD, 240x135 pixels, SPI interface
  * 
@@ -46,6 +55,7 @@ public:
      * @param battery_voltage Battery voltage in V
      * @param gps_valid GPS has valid fix
      * @param sample_count Number of samples logged
+     * @param is_paused Whether logging is paused
      * @param gps_speed Speed in knots (if valid)
      */
     static void update(uint32_t uptime_ms,
@@ -54,6 +64,7 @@ public:
                       float gyro_x, float gyro_y, float gyro_z,
                       float battery_soc, float battery_voltage,
                       bool gps_valid, uint32_t sample_count,
+                      bool is_paused = false,
                       float gps_speed = 0.0f);
 
     /**
@@ -66,9 +77,33 @@ public:
      */
     static void off();
 
+    /**
+     * @brief Cycle to next display mode
+     * Cycles: MAIN_SCREEN -> INFO_SCREEN -> DARK -> MAIN_SCREEN
+     */
+    static void cycle_display_mode();
+    
+    /**
+     * @brief Get current display mode
+     */
+    static DisplayMode get_display_mode();
+    
+    /**
+     * @brief Set display mode
+     */
+    static void set_display_mode(DisplayMode mode);
+    
+    /**
+     * @brief Display IP/BLE information screen
+     * @param ip_address IP address string (e.g., "192.168.1.100")
+     * @param ble_name BLE device name
+     */
+    static void show_info_screen(const char* ip_address, const char* ble_name);
+
 private:
     static Adafruit_ST7789* m_tft;
     static bool m_initialized;
+    static DisplayMode m_current_mode;
 };
 
 /**
@@ -79,13 +114,15 @@ private:
  * - Red (solid): Booting
  * - Yellow (1Hz flash): Searching for GPS fix
  * - Green (solid): GPS 3D fix acquired
+ * - Yellow (0.2Hz flash): Paused (storage not writing)
  */
 class NeoPixelStatus {
 public:
     enum class State {
         BOOTING,      // Red
-        NO_GPS_FIX,   // Yellow flashing
-        GPS_3D_FIX    // Green
+        NO_GPS_FIX,   // Yellow flashing at 1Hz
+        GPS_3D_FIX,   // Green
+        PAUSED        // Yellow flashing at 0.2Hz
     };
 
     /**
@@ -110,6 +147,17 @@ public:
      * @brief Deinitialize NeoPixel
      */
     static void deinit();
+    
+    /**
+     * @brief Enable/disable NeoPixel
+     * @param enabled true to enable, false to disable
+     */
+    static void set_enabled(bool enabled);
+    
+    /**
+     * @brief Check if NeoPixel is enabled
+     */
+    static bool is_enabled();
 
 private:
     static Adafruit_NeoPixel* m_pixel;
@@ -117,7 +165,9 @@ private:
     static uint32_t m_last_flash_time;
     static bool m_pixel_on;
     static bool m_initialized;
-    static constexpr uint32_t FLASH_INTERVAL_MS = 500;  // 1Hz flash (500ms on, 500ms off)
+    static bool m_enabled;  // Track if NeoPixel is enabled/disabled
+    static constexpr uint32_t FLASH_INTERVAL_1HZ_MS = 500;    // 1Hz flash (500ms on, 500ms off)
+    static constexpr uint32_t FLASH_INTERVAL_0P2HZ_MS = 2500;  // 0.2Hz flash (2500ms on, 2500ms off)
 };
 
 #endif // ST7789_DISPLAY_H
