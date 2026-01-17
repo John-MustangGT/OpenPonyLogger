@@ -98,8 +98,6 @@ void RTLoggerThread::task_wrapper(void* arg) {
 }
 
 void RTLoggerThread::task_loop() {
-    const TickType_t delay_ticks = pdMS_TO_TICKS(m_update_rate_ms);
-    
     // Timing trackers for individual sensors
     uint32_t last_gps_update = 0;
     uint32_t last_imu_update = 0;
@@ -115,31 +113,32 @@ void RTLoggerThread::task_loop() {
     }
     
     while (m_running) {
-        uint32_t now_ms = millis();
+        // Timestamp at the TOP of the loop
+        uint32_t loop_start_ms = millis();
         bool any_updated = false;
         
         // Update GPS if interval elapsed
-        if (now_ms - last_gps_update >= m_gps_rate_ms) {
+        if (loop_start_ms - last_gps_update >= m_gps_rate_ms) {
             m_sensor_manager->update_gps();
             m_last_gps = m_sensor_manager->get_gps();
-            last_gps_update = now_ms;
+            last_gps_update = loop_start_ms;
             any_updated = true;
         }
         
         // Update IMU if interval elapsed
-        if (now_ms - last_imu_update >= m_imu_rate_ms) {
+        if (loop_start_ms - last_imu_update >= m_imu_rate_ms) {
             m_sensor_manager->update_imu();
             m_last_accel = m_sensor_manager->get_accel();
             m_last_gyro = m_sensor_manager->get_gyro();
             m_last_compass = m_sensor_manager->get_comp();
-            last_imu_update = now_ms;
+            last_imu_update = loop_start_ms;
             any_updated = true;
         }
         
         // Update OBD if interval elapsed (handled separately in OBD driver)
-        if (now_ms - last_obd_update >= m_obd_rate_ms) {
+        if (loop_start_ms - last_obd_update >= m_obd_rate_ms) {
             // OBD updates would go here when implemented
-            last_obd_update = now_ms;
+            last_obd_update = loop_start_ms;
         }
         
         // Always update battery (low frequency sensor)
@@ -152,14 +151,14 @@ void RTLoggerThread::task_loop() {
             // Broadcast to WebSocket clients at 5Hz (every 200ms)
             static uint32_t last_broadcast_ms = 0;
             
-            if (WiFiManager::is_initialized() && (now_ms - last_broadcast_ms) >= 200) {
-                last_broadcast_ms = now_ms;
+            if (WiFiManager::is_initialized() && (loop_start_ms - last_broadcast_ms) >= 200) {
+                last_broadcast_ms = loop_start_ms;
                 
                 // Create JSON document with sensor data
                 // Use JsonDocument to avoid dynamic allocation
                 JsonDocument doc;
                 doc["type"] = "sensor";
-                doc["uptime_ms"] = now_ms;
+                doc["uptime_ms"] = loop_start_ms;
                 doc["sample_count"] = m_sample_count;
                 doc["is_paused"] = m_storage_paused;
                 
@@ -197,8 +196,18 @@ void RTLoggerThread::task_loop() {
             }
         }
         
-        // Delay until next update
-        vTaskDelay(delay_ticks);
+        // Calculate elapsed time and wait only the difference
+        uint32_t elapsed_ms = millis() - loop_start_ms;
+        
+        if (elapsed_ms < m_update_rate_ms) {
+            // We have time left, delay for the remainder
+            uint32_t remaining_ms = m_update_rate_ms - elapsed_ms;
+            vTaskDelay(pdMS_TO_TICKS(remaining_ms));
+        } else {
+            // Processing took longer than the update rate, yield immediately
+            // This allows other tasks to run but maintains maximum throughput
+            taskYIELD();
+        }
     }
 }
 
