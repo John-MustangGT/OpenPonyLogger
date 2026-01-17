@@ -31,12 +31,25 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
         .sensor-unit { font-size: 14px; color: #888; margin-left: 5px; }
         
         /* Configuration Form */
-        .config-form { max-width: 600px; }
+        .config-form { max-width: 800px; }
         .form-group { margin-bottom: 20px; }
         .form-group label { display: block; margin-bottom: 8px; color: #aaa; font-size: 14px; }
         .form-group input, .form-group select { width: 100%; padding: 10px; background: #333; border: 1px solid #444; 
                                                  color: #e0e0e0; border-radius: 5px; font-size: 14px; }
         .form-group input:focus, .form-group select:focus { outline: none; border-color: #4a9eff; }
+        
+        .config-section { margin-bottom: 30px; padding: 20px; background: #222; border-radius: 8px; }
+        .config-section h3 { color: #4a9eff; margin-bottom: 15px; font-size: 18px; }
+        
+        /* PID Table */
+        .pid-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .pid-table th { background: #333; padding: 10px; text-align: left; color: #aaa; font-size: 12px; border-bottom: 2px solid #444; }
+        .pid-table td { padding: 10px; border-bottom: 1px solid #333; }
+        .pid-table input[type="checkbox"] { width: auto; margin: 0; }
+        .pid-table input[type="number"] { width: 80px; padding: 5px; }
+        .pid-name { color: #e0e0e0; font-weight: bold; }
+        .pid-id { color: #888; font-family: monospace; font-size: 11px; }
+        .pid-category { font-size: 11px; color: #666; font-style: italic; }
         
         button { padding: 12px 24px; background: #4a9eff; color: #fff; border: none; border-radius: 5px; 
                  cursor: pointer; font-size: 14px; transition: background 0.3s; }
@@ -118,30 +131,138 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
         <!-- Configuration Tab -->
         <div id="configuration" class="tab-content">
             <form class="config-form" onsubmit="saveConfig(event)">
-                <div class="form-group">
-                    <label for="main-loop-hz">Main Loop Frequency (Hz)</label>
-                    <select id="main-loop-hz" name="main_loop_hz" required>
-                        <option value="5">5 Hz</option>
-                        <option value="10" selected>10 Hz</option>
-                        <option value="20">20 Hz</option>
-                        <option value="50">50 Hz</option>
-                        <option value="100">100 Hz</option>
-                    </select>
+                <div class="config-section">
+                    <h3>System Frequencies</h3>
+                    <div class="form-group">
+                        <label for="main-loop-hz">Main Loop Frequency (Hz)</label>
+                        <select id="main-loop-hz" name="main_loop_hz" required>
+                            <option value="5">5 Hz</option>
+                            <option value="10" selected>10 Hz</option>
+                            <option value="20">20 Hz</option>
+                            <option value="50">50 Hz</option>
+                            <option value="100">100 Hz</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="gps-hz">GPS Update Frequency (Hz)</label>
+                        <input type="number" id="gps-hz" name="gps_hz" min="1" max="100" value="10" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="imu-hz">IMU Update Frequency (Hz)</label>
+                        <input type="number" id="imu-hz" name="imu_hz" min="1" max="100" value="10" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="obd-hz">OBD Maximum Frequency (Hz)</label>
+                        <input type="number" id="obd-hz" name="obd_hz" min="1" max="100" value="10" required>
+                    </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="gps-hz">GPS Update Frequency (Hz)</label>
-                    <input type="number" id="gps-hz" name="gps_hz" min="1" max="100" value="10" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="imu-hz">IMU Update Frequency (Hz)</label>
-                    <input type="number" id="imu-hz" name="imu_hz" min="1" max="100" value="10" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="obd-hz">OBD Update Frequency (Hz)</label>
-                    <input type="number" id="obd-hz" name="obd_hz" min="1" max="100" value="10" required>
+                <div class="config-section">
+                    <h3>OBD-II PID Configuration</h3>
+                    <p style="color: #aaa; font-size: 13px; margin-bottom: 15px;">Configure individual update rates for each OBD-II Parameter ID. Core PIDs are recommended for track logging.</p>
+                    
+                    <table class="pid-table">
+                        <thead>
+                            <tr>
+                                <th>Enabled</th>
+                                <th>PID</th>
+                                <th>Parameter</th>
+                                <th>Rate (Hz)</th>
+                                <th>Category</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pid-table-body">
+                            <!-- Core PIDs -->
+                            <tr data-pid="0x0C">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x0C</td>
+                                <td class="pid-name">Engine RPM</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="10"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <tr data-pid="0x0D">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x0D</td>
+                                <td class="pid-name">Vehicle Speed</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="10"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <tr data-pid="0x11">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x11</td>
+                                <td class="pid-name">Throttle Position</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="10"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <tr data-pid="0x10">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x10</td>
+                                <td class="pid-name">MAF Air Flow</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="5"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <tr data-pid="0x05">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x05</td>
+                                <td class="pid-name">Coolant Temperature</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="1"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <tr data-pid="0x0F">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x0F</td>
+                                <td class="pid-name">Intake Air Temperature</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="1"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <tr data-pid="0x1F">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x1F</td>
+                                <td class="pid-name">Run Time Since Start</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="1"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <tr data-pid="0x2F">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x2F</td>
+                                <td class="pid-name">Fuel Tank Level</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="1"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <tr data-pid="0x33">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x33</td>
+                                <td class="pid-name">Barometric Pressure</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="1"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <tr data-pid="0x21">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x21</td>
+                                <td class="pid-name">Distance with MIL On</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="1"></td>
+                                <td class="pid-category">Core</td>
+                            </tr>
+                            <!-- Mandatory PIDs -->
+                            <tr data-pid="0x03">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x03</td>
+                                <td class="pid-name">Fuel System Status</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="1"></td>
+                                <td class="pid-category">Mandatory</td>
+                            </tr>
+                            <tr data-pid="0x04">
+                                <td><input type="checkbox" class="pid-enabled" checked></td>
+                                <td class="pid-id">0x04</td>
+                                <td class="pid-name">Engine Load</td>
+                                <td><input type="number" class="pid-rate" min="1" max="100" value="5"></td>
+                                <td class="pid-category">Mandatory</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
                 
                 <button type="submit" id="save-btn">Save Configuration</button>
@@ -266,6 +387,17 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 document.getElementById('gps-hz').value = config.gps_hz;
                 document.getElementById('imu-hz').value = config.imu_hz;
                 document.getElementById('obd-hz').value = config.obd_hz;
+                
+                // Load PID configurations if present
+                if (config.pids) {
+                    config.pids.forEach(pid => {
+                        const row = document.querySelector(`tr[data-pid="${pid.pid}"]`);
+                        if (row) {
+                            row.querySelector('.pid-enabled').checked = pid.enabled;
+                            row.querySelector('.pid-rate').value = pid.rate_hz;
+                        }
+                    });
+                }
             } catch (e) {
                 showStatus('config-status', 'Failed to load configuration', 'error');
             }
@@ -276,12 +408,31 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
             const btn = document.getElementById('save-btn');
             btn.disabled = true;
             
+            // Collect system configuration
             const config = {
                 main_loop_hz: parseInt(document.getElementById('main-loop-hz').value),
                 gps_hz: parseInt(document.getElementById('gps-hz').value),
                 imu_hz: parseInt(document.getElementById('imu-hz').value),
-                obd_hz: parseInt(document.getElementById('obd-hz').value)
+                obd_hz: parseInt(document.getElementById('obd-hz').value),
+                pids: []
             };
+            
+            // Collect PID configurations
+            document.querySelectorAll('#pid-table-body tr').forEach(row => {
+                const pidHex = row.getAttribute('data-pid');
+                const pidDec = parseInt(pidHex, 16);
+                const enabled = row.querySelector('.pid-enabled').checked;
+                const rate = parseInt(row.querySelector('.pid-rate').value);
+                const name = row.querySelector('.pid-name').textContent;
+                
+                config.pids.push({
+                    pid: pidHex,
+                    pid_dec: pidDec,
+                    enabled: enabled,
+                    rate_hz: rate,
+                    name: name
+                });
+            });
             
             try {
                 const response = await fetch('/api/config', {
