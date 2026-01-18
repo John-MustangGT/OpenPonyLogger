@@ -126,14 +126,10 @@ bool IcarBleDriver::connect(const char* address) {
     strncpy(m_device_address, address, sizeof(m_device_address) - 1);
     m_device_address[sizeof(m_device_address) - 1] = '\0';
     
-    // Get and store device name
-    std::string devName = pClient->getPeerAddress().toString();
-    // Try to get the actual advertised name
-    if (pClient->getValue(NimBLEUUID((uint16_t)0x2A00)).length() > 0) {
-        devName = pClient->getValue(NimBLEUUID((uint16_t)0x2A00));
-    }
-    strncpy(m_device_name, devName.c_str(), sizeof(m_device_name) - 1);
-    m_device_name[sizeof(m_device_name) - 1] = '\0';
+    // Get and store device name from address (BLE address is the identifier)
+    // Most adapters advertise as "vgate iCar2Pro" or similar during scan
+    // We'll store the address as the name for now
+    snprintf(m_device_name, sizeof(m_device_name), "OBD2 %s", address + strlen(address) - 5);
     
     m_connected = true;
     m_data.connected = true;
@@ -320,8 +316,9 @@ bool IcarBleDriver::send_obd_command(const char* command, char* response, size_t
     // Clear response buffer
     response[0] = '\0';
     
-    // Send command
-    m_tx_char->writeValue((uint8_t*)command, strlen(command));
+    // Send command - cast to const uint8_t* and specify response expected
+    size_t cmd_len = strlen(command);
+    m_tx_char->writeValue((const uint8_t*)command, cmd_len, true);
     
     // Wait for response with timeout
     uint32_t start_time = millis();
