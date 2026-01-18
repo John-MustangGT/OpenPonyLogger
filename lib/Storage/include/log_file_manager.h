@@ -3,47 +3,44 @@
 
 #include <Arduino.h>
 #include <vector>
-#include <FS.h>
-#include <SD.h>
+#include <esp_partition.h>
 #include "session_header.h"
 #include "log_block.h"
 
 /**
- * @brief Metadata for a single log file session
+ * @brief Metadata for a single log session in flash
  */
 struct log_file_info_t {
-    String filename;              // e.g., "session_20260118_143022.opl"
-    size_t file_size;             // Total file size in bytes
+    String filename;              // e.g., "current_session.opl" (always current session)
+    size_t file_size;             // Total logged data size in bytes
     uint64_t gps_utc_timestamp;   // GPS UTC time from session header (0 if unknown)
     uint64_t esp_timestamp_us;    // ESP timer at session start
     uint8_t startup_id[16];       // Session UUID
     bool valid;                   // True if header parsed successfully
-    uint32_t block_count;         // Number of data blocks in file
+    uint32_t block_count;         // Number of data blocks available
 };
 
 /**
- * @brief Manages log file operations on SD card
- * Handles listing, reading, validation, and deletion of .opl binary log files
+ * @brief Manages log data from flash partition
+ * Handles reading, validation, and streaming of .opl binary log data from circular buffer
  */
 class LogFileManager {
 public:
     /**
-     * @brief Initialize the log file manager
-     * @param sd_mount_point Path to SD card mount point (default "/sd")
+     * @brief Initialize the log file manager with flash partition
      * @return true if successful
      */
-    static bool init(const char* sd_mount_point = "/sd");
+    static bool init();
     
     /**
-     * @brief Scan SD card and build list of available log files
-     * @param force_rescan If true, always rescan. If false, use cached list
-     * @return Number of valid log files found
+     * @brief Scan flash partition and get current session info
+     * @return Number of valid sessions found (0 or 1)
      */
-    static uint32_t scan_log_files(bool force_rescan = false);
+    static uint32_t scan_log_files();
     
     /**
-     * @brief Get list of all valid log files
-     * @return Vector of log file metadata, sorted newest first
+     * @brief Get list of available log sessions (current session only)
+     * @return Vector with single log session
      */
     static const std::vector<log_file_info_t>& get_log_files();
     

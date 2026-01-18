@@ -6,6 +6,7 @@
 #include "icm20948_compass_wrapper.h"
 #include "max17048_driver.h"
 #include "rt_logger_thread.h"
+#include "flash_storage.h"
 #include "storage_reporter.h"
 #include "status_monitor.h"
 #include "st7789_display.h"
@@ -39,6 +40,7 @@ SensorManager sensor_manager;
 RTLoggerThread* rt_logger = nullptr;
 StatusMonitor* status_monitor = nullptr;
 StorageReporter reporter;
+FlashStorage* flash_storage = nullptr;  // Flash partition writer (Core 0)
 
 // PA1010D GPS driver instance
 PA1010DDriver* gps_driver = nullptr;
@@ -59,6 +61,12 @@ MAX17048Driver* battery_driver = nullptr;
 void on_storage_write(const gps_data_t& gps, const accel_data_t& accel,
                       const gyro_data_t& gyro, const compass_data_t& compass,
                       const battery_data_t& battery) {
+    // Write to flash storage (Core 0 task)
+    if (flash_storage != nullptr) {
+        flash_storage->write_sample(gps, accel, gyro, compass, battery);
+    }
+    
+    // Report to status monitor
     reporter.report_storage_write(gps, accel, gyro, compass, battery);
     
     // Increment write counter in status monitor
@@ -276,6 +284,18 @@ void setup() {
     }
     
     Serial.println("✓ RT Logger thread started");
+    Serial.flush();
+    
+    // Initialize flash storage (Core 0 writer task)
+    Serial.println("\n[8/9] Initializing Flash Storage...");
+    Serial.flush();
+    flash_storage = new FlashStorage();
+    if (!flash_storage->begin()) {
+        Serial.println("✗ ERROR: Failed to initialize flash storage");
+        Serial.println("System halted.");
+        while (1) { delay(1000); }
+    }
+    Serial.println("✓ Flash storage initialized");
     Serial.flush();
     
     // Initialize WiFi AP mode with WebSocket server

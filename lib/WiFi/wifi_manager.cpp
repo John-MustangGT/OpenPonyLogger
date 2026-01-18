@@ -3,7 +3,7 @@
 #include "config_manager.h"
 #include "icar_ble_driver.h"
 #include "version_info.h"
-#include "log_file_manager.h"
+#include "log_file_manager_flash.h"  // Flash-based file manager
 #include <cstdio>
 #include <ArduinoJson.h>
 
@@ -428,66 +428,36 @@ void WiFiManager::handle_log_download(AsyncWebServerRequest* request) {
     }
     
     String filename = request->getParam("file")->value();
-    bool delete_after = request->hasParam("delete") && request->getParam("delete")->value() == "true";
     
-    log_file_info_t file_info;
-    if (!LogFileManager::get_file_info(filename, file_info)) {
-        request->send(404, "application/json", "{\"success\":false,\"error\":\"File not found\"}");
-        return;
-    }
+    Serial.printf("[WiFi] Download requested: %s\n", filename.c_str());
     
-    // Suspend logging during download
-    LogFileManager::set_download_active(true);
-    
-    String full_path = "/sd/" + filename;
-    
-    // Stream file with decompression and validation
+    // Stream entire flash partition as .opl file
     AsyncWebServerResponse* response = request->beginChunkedResponse(
         "application/octet-stream",
-        [filename, delete_after, full_path](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
-            static File download_file;
-            static bool file_opened = false;
-            static bool header_sent = false;
-            static log_block_header_t current_block;
-            static EXT_RAM_ATTR uint8_t decompressed_buffer[8192];
-            static size_t decompressed_size = 0;
-            static size_t decompressed_offset = 0;
+        [filename](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+            static size_t flash_offset = 0;
             
-            // First call - open file
+            // Reset on first chunk
             if (index == 0) {
-                download_file = SD.open(full_path.c_str(), FILE_READ);
-                if (!download_file) {
-                    Serial.printf("[WiFi] ERROR: Cannot open %s\n", full_path.c_str());
-                    LogFileManager::set_download_active(false);
-                    return 0;
-                }
-                file_opened = true;
-                header_sent = false;
-                decompressed_size = 0;
-                decompressed_offset = 0;
-                Serial.printf("[WiFi] Starting download: %s\n", filename.c_str());
+                flash_offset = 0;
+                Serial.println("[WiFi] Starting flash stream...");
             }
             
-            if (!file_opened) {
-                return 0;
+            // Read from flash partition
+            size_t bytes_read = LogFileManager::read_flash(flash_offset, buffer, maxLen);
+            flash_offset += bytes_read;
+            
+            if (bytes_read == 0) {
+                Serial.printf("[WiFi] Stream complete: %d total bytes\n", flash_offset);
             }
             
-            size_t bytes_written = 0;
-            
-            // Send session header (raw, not decompressed)
-            if (!header_sent) {
-                session_start_header_t session_header;
-                download_file.read((uint8_t*)&session_header, sizeof(session_header));
-                size_t to_copy = min(sizeof(session_header), maxLen);
-                memcpy(buffer, &session_header, to_copy);
-                header_sent = true;
-                return to_copy;
-            }
-            
-            // Stream decompressed data blocks
-            while (bytes_written < maxLen) {
-                // Need to decompress next block?
-                if (decompressed_offset >= decompressed_size) {
+            return bytes_read;
+        }
+    );
+    
+    response->addHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+    request->send(response);
+}
                     if (!download_file.available()) {
                         // End of file
                         download_file.close();
