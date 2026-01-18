@@ -213,9 +213,16 @@ void RTLoggerThread::task_loop() {
             }
         }
         
-        // Delay until next update, compensating for execution time
-        // Use vTaskDelayUntil for absolute timing - guarantees precise intervals
-        vTaskDelayUntil(&next_wake_time, delay_ticks);
+        // Delay until next update using absolute timing
+        // If we're running behind, vTaskDelayUntil still yields at least 1 tick for watchdog
+        TickType_t now = xTaskGetTickCount();
+        if ((now - next_wake_time) > delay_ticks) {
+            // We've fallen significantly behind - reset timing base to prevent runaway
+            next_wake_time = now;
+            vTaskDelay(1);  // Minimal yield for watchdog
+        } else {
+            vTaskDelayUntil(&next_wake_time, delay_ticks);
+        }
     }
 }
 
