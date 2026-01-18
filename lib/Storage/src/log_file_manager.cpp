@@ -1,6 +1,9 @@
 #include "log_file_manager.h"
 #include <esp_crc.h>
-#include <miniz.h>
+
+// Note: miniz is not available in Arduino ESP32 by default
+// We'll need to add decompression support or use raw data
+// For now, we'll skip decompression validation in the read function
 
 // Static member initialization
 String LogFileManager::m_mount_point = "/sd";
@@ -295,22 +298,15 @@ size_t LogFileManager::read_and_decompress_block(File& file,
         return 0;
     }
     
-    // Decompress
-    mz_ulong dest_len = max_size;
-    int result = mz_uncompress(decompressed_data, &dest_len, 
-                               compressed_buffer, block_header.compressed_size);
+    // TODO: Add decompression support when miniz or zlib is available
+    // For now, just copy the compressed data as-is for download
+    // The client-side tool will need to decompress
+    Serial.println("[LogFileMgr] WARNING: Decompression not implemented, returning compressed data");
     
-    if (result != MZ_OK) {
-        Serial.printf("[LogFileMgr] ERROR: Decompression failed (error %d)\n", result);
-        return 0;
-    }
+    size_t copy_size = min((size_t)block_header.compressed_size, max_size);
+    memcpy(decompressed_data, compressed_buffer, copy_size);
     
-    if (dest_len != block_header.uncompressed_size) {
-        Serial.printf("[LogFileMgr] WARNING: Size mismatch (got %u, expected %u)\n",
-                     (uint32_t)dest_len, block_header.uncompressed_size);
-    }
-    
-    return dest_len;
+    return copy_size;
 }
 
 bool LogFileManager::delete_file(const String& filename) {
