@@ -161,7 +161,31 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                 </div>
                 
                 <div class="config-section">
-                    <h3>OBD-II PID Configuration</h3>
+                    <h3>Network Configuration</h3>
+                    <p style="color: #aaa; font-size: 13px; margin-bottom: 15px;">Configure WiFi Access Point settings. Changes require device restart to take effect.</p>
+                    
+                    <div class="form-group">
+                        <label for="net-ssid">WiFi SSID (Network Name)</label>
+                        <input type="text" id="net-ssid" name="net_ssid" maxlength="31" placeholder="PonyLogger" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="net-password">WiFi Password (leave empty for open network)</label>
+                        <input type="password" id="net-password" name="net_password" maxlength="63" placeholder="Optional - leave blank for open network">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="net-ip">IP Address</label>
+                        <input type="text" id="net-ip" name="net_ip" pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$" placeholder="192.168.4.1" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="net-subnet">Subnet Mask</label>
+                        <input type="text" id="net-subnet" name="net_subnet" pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$" placeholder="255.255.255.0" required>
+                    </div>
+                </div>
+                
+                <div class="config-section">\n                    <h3>OBD-II PID Configuration</h3>
                     <p style="color: #aaa; font-size: 13px; margin-bottom: 15px;">Configure individual update rates for each OBD-II Parameter ID. Core PIDs are recommended for track logging.</p>
                     
                     <table class="pid-table">
@@ -388,6 +412,14 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 document.getElementById('imu-hz').value = config.imu_hz;
                 document.getElementById('obd-hz').value = config.obd_hz;
                 
+                // Load network configuration if present
+                if (config.network) {
+                    document.getElementById('net-ssid').value = config.network.ssid || 'PonyLogger';
+                    document.getElementById('net-password').value = config.network.password || '';
+                    document.getElementById('net-ip').value = config.network.ip || '192.168.4.1';
+                    document.getElementById('net-subnet').value = config.network.subnet || '255.255.255.0';
+                }
+                
                 // Load PID configurations if present
                 if (config.pids) {
                     config.pids.forEach(pid => {
@@ -414,6 +446,12 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 gps_hz: parseInt(document.getElementById('gps-hz').value),
                 imu_hz: parseInt(document.getElementById('imu-hz').value),
                 obd_hz: parseInt(document.getElementById('obd-hz').value),
+                network: {
+                    ssid: document.getElementById('net-ssid').value,
+                    password: document.getElementById('net-password').value,
+                    ip: document.getElementById('net-ip').value,
+                    subnet: document.getElementById('net-subnet').value
+                },
                 pids: []
             };
             

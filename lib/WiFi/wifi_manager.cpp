@@ -108,46 +108,102 @@ void WiFiManager::handle_root(AsyncWebServerRequest* request) {
 }
 
 void WiFiManager::handle_config_get(AsyncWebServerRequest* request) {
+    Serial.println("[WiFi] handle_config_get called");
+    
+    if (!ConfigManager::init()) {
+        Serial.println("[WiFi] ERROR: Config manager not initialized");
+        request->send(500, "application/json", "{\"success\":false,\"error\":\"Config not initialized\"}");
+        return;
+    }
+    
     logging_config_t config = ConfigManager::get_current();
     
+    // Use larger document size for all the data
     JsonDocument doc;
     doc["main_loop_hz"] = config.main_loop_hz;
     doc["gps_hz"] = config.gps_hz;
     doc["imu_hz"] = config.imu_hz;
     doc["obd_hz"] = config.obd_hz;
     
-    // Add PID configurations
+    // Add network configuration with null-termination safety
+    JsonObject network = doc["network"].to<JsonObject>();
+    network["ssid"] = String(config.network.ssid);
+    network["password"] = String(config.network.password);
+    char ip_str[16];
+    snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d", 
+             config.network.ip[0], config.network.ip[1], config.network.ip[2], config.network.ip[3]);
+    network["ip"] = ip_str;
+    char subnet_str[16];
+    snprintf(subnet_str, sizeof(subnet_str), "%d.%d.%d.%d", 
+             config.network.subnet[0], config.network.subnet[1], config.network.subnet[2], config.network.subnet[3]);
+    network["subnet"] = subnet_str;
+    
+    Serial.printf("[WiFi] Network config - SSID: %s, IP: %s\n", config.network.ssid, ip_str);
+    
+    // Add PID configurations only if map is not empty
     JsonArray pids = doc["pids"].to<JsonArray>();
-    for (const auto& pid_pair : config.pid_configs) {
-        JsonObject pid_obj = pids.add<JsonObject>();
-        char pid_hex[8];
-        snprintf(pid_hex, sizeof(pid_hex), "0x%02X", pid_pair.second.pid);
-        pid_obj["pid"] = pid_hex;
-        pid_obj["pid_dec"] = pid_pair.second.pid;
-        pid_obj["enabled"] = pid_pair.second.enabled;
-        pid_obj["rate_hz"] = pid_pair.second.rate_hz;
-        pid_obj["name"] = pid_pair.second.name;
+    if (!config.pid_configs.empty()) {
+        for (const auto& pid_pair : config.pid_configs) {
+            JsonObject pid_obj = pids.add<JsonObject>();
+            char pid_hex[8];
+            snprintf(pid_hex, sizeof(pid_hex), "0x%02X", pid_pair.second.pid);
+            pid_obj["pid"] = pid_hex;
+            pid_obj["pid_dec"] = pid_pair.second.pid;
+            pid_obj["enabled"] = pid_pair.second.enabled;
+            pid_obj["rate_hz"] = pid_pair.second.rate_hz;
+            pid_obj["name"] = pid_pair.second.name;
+        }
     }
     
     String json_str;
     serializeJson(doc, json_str);
+    
+    Serial.printf("[WiFi] Sending config response (%d bytes)\n", json_str.length());
     request->send(200, "application/json", json_str);
 }
 
 void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+    Serial.printf("[WiFi] handle_config_post called (len=%d, total=%d)\n", len, total);
+    
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, (const char*)data, len);
     
     if (error) {
+        Serial.printf("[WiFi] JSON parse error: %s\n", error.c_str());
         request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON\"}");
         return;
     }
     
-    logging_config_t config;
+    logging_config_t config = ConfigManager::get_current();  // Start with current config
     config.main_loop_hz = doc["main_loop_hz"] | 10;
     config.gps_hz = doc["gps_hz"] | 10;
     config.imu_hz = doc["imu_hz"] | 10;
     config.obd_hz = doc["obd_hz"] | 10;
+    
+    // Parse network configuration if provided
+    if (doc.containsKey("network")) {
+        JsonObject network = doc["network"];
+        if (network.containsKey("ssid")) {
+            strncpy(config.network.ssid, network["ssid"] | "PonyLogger", sizeof(config.network.ssid) - 1);
+            config.network.ssid[sizeof(config.network.ssid) - 1] = '\0';
+        }
+        if (network.containsKey("password")) {
+            strncpy(config.network.password, network["password"] | "", sizeof(config.network.password) - 1);
+            config.network.password[sizeof(config.network.password) - 1] = '\0';
+        }
+        if (network.containsKey("ip")) {
+            const char* ip_str = network["ip"];
+            sscanf(ip_str, "%hhu.%hhu.%hhu.%hhu", 
+                   &config.network.ip[0], &config.network.ip[1], 
+                   &config.network.ip[2], &config.network.ip[3]);
+        }
+        if (network.containsKey("subnet")) {
+            const char* subnet_str = network["subnet"];
+            sscanf(subnet_str, "%hhu.%hhu.%hhu.%hhu", 
+                   &config.network.subnet[0], &config.network.subnet[1], 
+                   &config.network.subnet[2], &config.network.subnet[3]);
+        }
+    }
     
     bool success = ConfigManager::update(config);
     

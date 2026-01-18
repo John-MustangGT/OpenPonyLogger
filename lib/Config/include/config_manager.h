@@ -6,6 +6,25 @@
 #include <map>
 
 /**
+ * @brief Network Configuration
+ * WiFi AP settings for the device
+ */
+struct network_config_t {
+    char ssid[32];          // WiFi AP SSID (max 31 chars + null)
+    char password[64];      // WiFi AP password (empty = open network)
+    uint8_t ip[4];          // IP address (e.g., 192.168.4.1)
+    uint8_t subnet[4];      // Subnet mask (e.g., 255.255.255.0)
+    
+    // Default constructor with sensible defaults
+    network_config_t() {
+        strncpy(ssid, "PonyLogger", sizeof(ssid));
+        password[0] = '\0';  // Open network by default
+        ip[0] = 192; ip[1] = 168; ip[2] = 4; ip[3] = 1;
+        subnet[0] = 255; subnet[1] = 255; subnet[2] = 255; subnet[3] = 0;
+    }
+};
+
+/**
  * @brief OBD-II PID Configuration
  * Each PID can have its own update rate
  */
@@ -33,6 +52,9 @@ struct logging_config_t {
     uint16_t gps_hz;        // GPS update rate
     uint16_t imu_hz;        // IMU (accel/gyro/compass) update rate
     uint16_t obd_hz;        // OBD global max update rate
+    
+    // Network configuration
+    network_config_t network;
     
     // Individual PID configurations
     std::map<uint8_t, pid_config_t> pid_configs;
@@ -122,6 +144,18 @@ private:
     static const char* KEY_GPS_HZ;
     static const char* KEY_IMU_HZ;
     static const char* KEY_OBD_HZ;
+    static const char* KEY_NET_SSID;
+    static const char* KEY_NET_PASSWORD;
+    static const char* KEY_NET_IP;
+    static const char* KEY_NET_SUBNET;
+    static const char* KEY_CHECKSUM;
+    
+    /**
+     * @brief Calculate CRC32 checksum of configuration
+     * @param config Configuration to checksum
+     * @return CRC32 checksum value
+     */
+    static uint32_t calculate_checksum(const logging_config_t& config);
 };
 
 #endif // CONFIG_MANAGER_H

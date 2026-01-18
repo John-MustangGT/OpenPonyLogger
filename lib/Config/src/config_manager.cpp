@@ -1,5 +1,6 @@
 #include "config_manager.h"
 #include <Preferences.h>
+#include <esp_crc.h>
 
 // Static member initialization
 bool ConfigManager::m_initialized = false;
@@ -11,6 +12,11 @@ const char* ConfigManager::KEY_MAIN_LOOP_HZ = "main_loop_hz";
 const char* ConfigManager::KEY_GPS_HZ = "gps_hz";
 const char* ConfigManager::KEY_IMU_HZ = "imu_hz";
 const char* ConfigManager::KEY_OBD_HZ = "obd_hz";
+const char* ConfigManager::KEY_NET_SSID = "net_ssid";
+const char* ConfigManager::KEY_NET_PASSWORD = "net_password";
+const char* ConfigManager::KEY_NET_IP = "net_ip";
+const char* ConfigManager::KEY_NET_SUBNET = "net_subnet";
+const char* ConfigManager::KEY_CHECKSUM = "checksum";
 
 bool ConfigManager::init() {
     if (m_initialized) {
@@ -54,9 +60,52 @@ logging_config_t ConfigManager::load() {
     config.imu_hz = prefs.getUShort(KEY_IMU_HZ, 10);
     config.obd_hz = prefs.getUShort(KEY_OBD_HZ, 10);
     
+    // Load network configuration with safety checks
+    size_t ssid_len = prefs.getString(KEY_NET_SSID, config.network.ssid, sizeof(config.network.ssid));
+    if (ssid_len == 0 || config.network.ssid[0] == '\0') {
+        // No SSID saved or empty, use default
+        strncpy(config.network.ssid, "PonyLogger", sizeof(config.network.ssid) - 1);
+        config.network.ssid[sizeof(config.network.ssid) - 1] = '\0';
+    }
+    
+    size_t pwd_len = prefs.getString(KEY_NET_PASSWORD, config.network.password, sizeof(config.network.password));
+    if (pwd_len > 0) {
+        config.network.password[sizeof(config.network.password) - 1] = '\0';  // Ensure null termination
+    }
+    
+    size_t ip_len = prefs.getBytes(KEY_NET_IP, config.network.ip, sizeof(config.network.ip));
+    if (ip_len != sizeof(config.network.ip)) {
+        // Invalid or missing IP, use default
+        config.network.ip[0] = 192; config.network.ip[1] = 168;
+        config.network.ip[2] = 4; config.network.ip[3] = 1;
+    }
+    
+    size_t subnet_len = prefs.getBytes(KEY_NET_SUBNET, config.network.subnet, sizeof(config.network.subnet));
+    if (subnet_len != sizeof(config.network.subnet)) {
+        // Invalid or missing subnet, use default
+        config.network.subnet[0] = 255; config.network.subnet[1] = 255;
+        config.network.subnet[2] = 255; config.network.subnet[3] = 0;
+    }
+    
+    // Verify checksum
+    uint32_t stored_checksum = prefs.getUInt(KEY_CHECKSUM, 0);
+    uint32_t calculated_checksum = calculate_checksum(config);
+    
     prefs.end();
     
-    Serial.println("[Config] Configuration loaded from NVS");
+    if (stored_checksum == 0) {
+        Serial.println("[Config] No checksum found in NVS, using defaults");
+        return logging_config_t();  // Return defaults
+    }
+    
+    if (stored_checksum != calculated_checksum) {
+        Serial.printf("[Config] WARNING: Checksum mismatch! Stored: 0x%08X, Calculated: 0x%08X\n", 
+                     stored_checksum, calculated_checksum);
+        Serial.println("[Config] NVS data corrupted, using defaults");
+        return logging_config_t();  // Return defaults
+    }
+    
+    Serial.printf("[Config] Configuration loaded from NVS (checksum: 0x%08X)\n", stored_checksum);
     return config;
 }
 
@@ -79,10 +128,20 @@ bool ConfigManager::save(const logging_config_t& config) {
     prefs.putUShort(KEY_IMU_HZ, config.imu_hz);
     prefs.putUShort(KEY_OBD_HZ, config.obd_hz);
     
+    // Save network configuration
+    prefs.putString(KEY_NET_SSID, config.network.ssid);
+    prefs.putString(KEY_NET_PASSWORD, config.network.password);
+    prefs.putBytes(KEY_NET_IP, config.network.ip, sizeof(config.network.ip));
+    prefs.putBytes(KEY_NET_SUBNET, config.network.subnet, sizeof(config.network.subnet));
+    
+    // Calculate and save checksum
+    uint32_t checksum = calculate_checksum(config);
+    prefs.putUInt(KEY_CHECKSUM, checksum);
+    
     prefs.end();
     
-    Serial.printf("[Config] Configuration saved to NVS - Main: %dHz, GPS: %dHz, IMU: %dHz, OBD: %dHz\n",
-                  config.main_loop_hz, config.gps_hz, config.imu_hz, config.obd_hz);
+    Serial.printf("[Config] Configuration saved to NVS - Main: %dHz, GPS: %dHz, IMU: %dHz, OBD: %dHz (checksum: 0x%08X)\n",
+                  config.main_loop_hz, config.gps_hz, config.imu_hz, config.obd_hz, checksum);
     
     return true;
 }
@@ -145,4 +204,30 @@ bool ConfigManager::validate(const logging_config_t& config) {
 bool ConfigManager::reset_to_defaults() {
     logging_config_t defaults;
     return update(defaults);
+}
+
+uint32_t ConfigManager::calculate_checksum(const logging_config_t& config) {
+    // Create a buffer with the configuration values to checksum
+    struct {
+        uint16_t main_loop_hz;
+        uint16_t gps_hz;
+        uint16_t imu_hz;
+        uint16_t obd_hz;
+        char ssid[32];
+        char password[64];
+        uint8_t ip[4];
+        uint8_t subnet[4];
+    } data;
+    
+    data.main_loop_hz = config.main_loop_hz;
+    data.gps_hz = config.gps_hz;
+    data.imu_hz = config.imu_hz;
+    data.obd_hz = config.obd_hz;
+    memcpy(data.ssid, config.network.ssid, sizeof(data.ssid));
+    memcpy(data.password, config.network.password, sizeof(data.password));
+    memcpy(data.ip, config.network.ip, sizeof(data.ip));
+    memcpy(data.subnet, config.network.subnet, sizeof(data.subnet));
+    
+    // Calculate CRC32 checksum
+    return esp_crc32_le(0, (uint8_t*)&data, sizeof(data));
 }
