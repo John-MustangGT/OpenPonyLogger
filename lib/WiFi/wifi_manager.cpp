@@ -160,17 +160,6 @@ void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* da
 
 void WiFiManager::handle_about(AsyncWebServerRequest* request) {
     JsonDocument doc;
-<<<<<<< Updated upstream
-    doc["version"] = PROJECT_VERSION;
-    doc["git_sha"] = GIT_COMMIT_SHA;
-    doc["build_date"] = BUILD_TIMESTAMP;
-    doc["project_name"] = PROJECT_NAME;
-    doc["license"] = PROJECT_LICENSE;
-    
-    String response;
-    serializeJson(doc, response);
-    request->send(200, "application/json", response);
-=======
     
     #ifdef GIT_COMMIT_SHA
         doc["git_sha"] = GIT_COMMIT_SHA;
@@ -192,7 +181,6 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
     String json_str;
     serializeJson(doc, json_str);
     request->send(200, "application/json", json_str);
->>>>>>> Stashed changes
 }
 
 void WiFiManager::handle_websocket_event(AsyncWebSocket* server, AsyncWebSocketClient* client,
