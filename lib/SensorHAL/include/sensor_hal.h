@@ -134,6 +134,11 @@ public:
     
     bool update_all();
     
+    // Individual sensor updates
+    bool update_gps();
+    bool update_imu();      // Updates accel, gyro, compass together
+    bool update_battery();
+    
     // Generic sensor access functions
     gps_data_t get_gps() const;
     accel_data_t get_accel() const;

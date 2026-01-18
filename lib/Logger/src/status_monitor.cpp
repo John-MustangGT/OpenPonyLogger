@@ -1,8 +1,12 @@
 #include "status_monitor.h"
 #include "units_helper.h"
+#include "wifi_manager.h"
+#include "config_manager.h"
+#include "icar_ble_driver.h"
 #include <Arduino.h>
 #include <cstdio>
 #include <esp_log.h>
+#include <ArduinoJson.h>
 
 // Button GPIO pins
 #define BUTTON_D0 0   // Pause/Resume
@@ -256,6 +260,102 @@ void StatusMonitor::task_loop() {
             }
         }
         d2_last_state = d2_state;
+        
+        // Broadcast sensor data via WebSocket at 2Hz (every 500ms)
+        // Only when clients are connected to minimize overhead
+        static uint32_t last_ws_broadcast_ms = 0;
+        static uint32_t last_config_check_ms = 0;
+        static bool obd_ble_enabled = true;
+        
+        // Update OBD BLE enabled state every 5 seconds
+        if (now - last_config_check_ms >= 5000) {
+            obd_ble_enabled = ConfigManager::get_current().obd_ble_enabled;
+            last_config_check_ms = now;
+        }
+        
+        if (WiFiManager::is_initialized() && WiFiManager::has_clients() && 
+            (now - last_ws_broadcast_ms) >= 500) {
+            last_ws_broadcast_ms = now;
+            
+            if (m_rt_logger != nullptr) {
+                // Get latest sensor data
+                gps_data_t gps = m_rt_logger->get_last_gps();
+                accel_data_t accel = m_rt_logger->get_last_accel();
+                gyro_data_t gyro = m_rt_logger->get_last_gyro();
+                battery_data_t battery = m_rt_logger->get_last_battery();
+                uint32_t sample_count = m_rt_logger->get_sample_count();
+                bool is_paused = m_rt_logger->is_storage_paused();
+                
+                // Create JSON document with sensor data
+                JsonDocument doc;
+                doc["type"] = "sensor";
+                doc["uptime_ms"] = now;
+                doc["sample_count"] = sample_count;
+                doc["is_paused"] = is_paused;
+                
+                // GPS data
+                doc["gps_valid"] = gps.valid;
+                doc["latitude"] = gps.latitude;
+                doc["longitude"] = gps.longitude;
+                doc["altitude"] = gps.altitude;
+                doc["speed"] = gps.speed;
+                doc["satellites"] = gps.satellites;
+                
+                // Accelerometer
+                doc["accel_x"] = accel.x;
+                doc["accel_y"] = accel.y;
+                doc["accel_z"] = accel.z;
+                doc["temperature"] = accel.temperature;
+                
+                // Gyroscope
+                doc["gyro_x"] = gyro.x;
+                doc["gyro_y"] = gyro.y;
+                doc["gyro_z"] = gyro.z;
+                
+                // Battery data
+                doc["battery_soc"] = battery.state_of_charge;
+                doc["battery_voltage"] = battery.voltage;
+                doc["battery_current"] = battery.current;
+                doc["battery_temp"] = battery.temperature / 100.0f;
+                
+                // OBD data (if connected and enabled)
+                bool obd_available = false;
+                if (obd_ble_enabled) {
+                    try {
+                        obd_available = IcarBleDriver::is_connected();
+                    } catch (...) {
+                        obd_available = false;
+                    }
+                }
+                
+                if (obd_available) {
+                    try {
+                        obd_data_t obd = IcarBleDriver::get_data();
+                        JsonObject obd_obj = doc["obd"].to<JsonObject>();
+                        obd_obj["connected"] = true;
+                        obd_obj["rpm"] = obd.engine_rpm;
+                        obd_obj["speed"] = obd.vehicle_speed;
+                        obd_obj["throttle"] = obd.throttle_position;
+                        obd_obj["load"] = obd.engine_load;
+                        obd_obj["coolant_temp"] = obd.coolant_temp;
+                        obd_obj["intake_temp"] = obd.intake_temp;
+                        obd_obj["maf"] = obd.maf_flow;
+                        obd_obj["timing_advance"] = obd.timing_advance;
+                    } catch (...) {
+                        doc["obd"]["connected"] = false;
+                    }
+                } else {
+                    doc["obd"]["connected"] = false;
+                }
+                
+                // Serialize and broadcast
+                static EXT_RAM_ATTR char json_buffer[768];
+                size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
+                if (n > 0 && n < sizeof(json_buffer)) {
+                    WiFiManager::broadcast_json(json_buffer);
+                }
+            }
+        }
         
         // Print status at regular intervals
         if (now - m_last_report_time >= m_report_interval_ms) {

@@ -38,6 +38,12 @@ public:
     static uint16_t get_client_count();
     
     /**
+     * @brief Check if any WebSocket clients are connected
+     * @return true if at least one client is connected
+     */
+    static bool has_clients();
+    
+    /**
      * @brief Send JSON data to all connected WebSocket clients
      * @param json JSON string to send (e.g., "{\"type\": \"sensor\", ...}")
      */
@@ -60,6 +66,26 @@ private:
      * @brief Handle HTTP request for root path (/)
      */
     static void handle_root(AsyncWebServerRequest* request);
+    
+    /**
+     * @brief Handle GET request for configuration
+     */
+    static void handle_config_get(AsyncWebServerRequest* request);
+    
+    /**
+     * @brief Handle POST request to save configuration
+     */
+    static void handle_config_post(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total);
+    
+    /**
+     * @brief Handle GET request for about/version information
+     */
+    static void handle_about(AsyncWebServerRequest* request);
+    
+    /**
+     * @brief Handle POST request to restart device
+     */
+    static void handle_restart(AsyncWebServerRequest* request);
     
     /**
      * @brief Handle WebSocket events (connect, disconnect, message)

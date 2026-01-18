@@ -15,10 +15,13 @@ public:
     /**
      * @brief Constructor
      * @param sensor_manager Initialized SensorManager instance
-     * @param update_rate_ms Update frequency in milliseconds
-     * @param storage_write_callback Callback function on storage write
+     * @param update_rate_ms Main loop update frequency in milliseconds
+     * @param gps_rate_ms GPS update frequency in milliseconds (0 = use main rate)
+     * @param imu_rate_ms IMU update frequency in milliseconds (0 = use main rate)
+     * @param obd_rate_ms OBD update frequency in milliseconds (0 = use main rate)
      */
-    RTLoggerThread(SensorManager* sensor_manager, uint32_t update_rate_ms = 100);
+    RTLoggerThread(SensorManager* sensor_manager, uint32_t update_rate_ms = 100,
+                   uint32_t gps_rate_ms = 0, uint32_t imu_rate_ms = 0, uint32_t obd_rate_ms = 0);
     
     ~RTLoggerThread();
     
@@ -100,6 +103,9 @@ public:
 private:
     SensorManager* m_sensor_manager;
     uint32_t m_update_rate_ms;
+    uint32_t m_gps_rate_ms;     // GPS update rate (0 = use main rate)
+    uint32_t m_imu_rate_ms;     // IMU update rate (0 = use main rate)
+    uint32_t m_obd_rate_ms;     // OBD update rate (0 = use main rate)
     TaskHandle_t m_task_handle;
     bool m_running;
     bool m_storage_paused;      // Pause storage writes

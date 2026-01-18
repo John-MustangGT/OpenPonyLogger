@@ -10,6 +10,7 @@
 #include "status_monitor.h"
 #include "st7789_display.h"
 #include "wifi_manager.h"
+#include "config_manager.h"
 
 // Hardware configuration
 #define GPS_TX_PIN          17
@@ -216,6 +217,21 @@ void setup() {
     Serial.println("✓ Buttons initialized (D0: GPIO0-pullup, D1: GPIO1-wake, D2: GPIO2-wake)");
     Serial.flush();
     
+    // Initialize configuration manager
+    Serial.println("▶ Initializing Configuration Manager...");
+    Serial.flush();
+    if (!ConfigManager::init()) {
+        Serial.println("⚠ WARNING: Failed to initialize configuration manager, using defaults");
+        Serial.flush();
+    }
+    
+    // Get current configuration
+    logging_config_t config = ConfigManager::get_current();
+    uint32_t main_loop_ms = 1000 / config.main_loop_hz;
+    uint32_t gps_ms = 1000 / config.gps_hz;
+    uint32_t imu_ms = 1000 / config.imu_hz;
+    uint32_t obd_ms = 1000 / config.obd_hz;
+    
     // Initialize sensors
     Serial.println("About to call init_sensors()");
     Serial.flush();
@@ -237,7 +253,7 @@ void setup() {
     // Create and start the RT logger thread on core 1
     Serial.println("  → Creating RTLoggerThread object...");
     Serial.flush();
-    rt_logger = new RTLoggerThread(&sensor_manager, 100);  // 100ms update rate
+    rt_logger = new RTLoggerThread(&sensor_manager, main_loop_ms, gps_ms, imu_ms, obd_ms);
     Serial.println("  ✓ RTLoggerThread object created");
     Serial.flush();
     

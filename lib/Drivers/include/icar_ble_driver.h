@@ -126,13 +126,65 @@ public:
      */
     static void set_device_address(const char* address);
 
+    /**
+     * @brief Get connected device name
+     */
+    static const char* get_device_name();
+
+    /**
+     * @brief Get vehicle VIN (Vehicle Identification Number)
+     * Retrieves VIN from OBD-II Mode 09 PID 02
+     */
+    static const char* get_vin();
+
+    /**
+     * @brief Get ECU/ECM name
+     * Retrieves ECU name from OBD-II Mode 09 PID 0A
+     */
+    static const char* get_ecm_name();
+
+    /**
+     * @brief Request VIN and ECM name from vehicle
+     * Should be called once after connection established
+     */
+    static void request_vehicle_info();
+
 private:
     static obd_data_t m_data;
     static bool m_connected;
     static char m_device_address[18];
+    static char m_device_name[32];
+    static char m_vin[18];
+    static char m_ecm_name[20];
     static NimBLERemoteCharacteristic* m_rx_char;
     static NimBLERemoteCharacteristic* m_tx_char;
     static std::vector<obd_pid_config_t> m_configured_pids;
+    
+    /**
+     * @brief Send OBD command and wait for response
+     * @param command Command string to send (e.g., "09 02\r")
+     * @param response Buffer to store response
+     * @param max_len Maximum response buffer size
+     * @param timeout_ms Timeout in milliseconds
+     * @return true if response received
+     */
+    static bool send_obd_command(const char* command, char* response, size_t max_len, uint32_t timeout_ms = 2000);
+    
+    /**
+     * @brief Parse VIN from Mode 09 PID 02 response
+     * @param response Raw OBD response string
+     * @param vin Output buffer for VIN (must be at least 18 bytes)
+     * @return true if VIN parsed successfully
+     */
+    static bool parse_vin_response(const char* response, char* vin);
+    
+    /**
+     * @brief Parse ECM name from Mode 09 PID 0A response
+     * @param response Raw OBD response string
+     * @param ecm_name Output buffer for ECM name (must be at least 20 bytes)
+     * @return true if ECM name parsed successfully
+     */
+    static bool parse_ecm_response(const char* response, char* ecm_name);
 };
 
 #endif // ICAR_BLE_DRIVER_H

@@ -6,6 +6,9 @@
 obd_data_t IcarBleDriver::m_data = {};
 bool IcarBleDriver::m_connected = false;
 char IcarBleDriver::m_device_address[18] = "";
+char IcarBleDriver::m_device_name[32] = "";
+char IcarBleDriver::m_vin[18] = "";
+char IcarBleDriver::m_ecm_name[20] = "";
 NimBLERemoteCharacteristic* IcarBleDriver::m_rx_char = nullptr;
 NimBLERemoteCharacteristic* IcarBleDriver::m_tx_char = nullptr;
 std::vector<obd_pid_config_t> IcarBleDriver::m_configured_pids = {};
@@ -123,11 +126,20 @@ bool IcarBleDriver::connect(const char* address) {
     strncpy(m_device_address, address, sizeof(m_device_address) - 1);
     m_device_address[sizeof(m_device_address) - 1] = '\0';
     
+    // Get and store device name from address (BLE address is the identifier)
+    // Most adapters advertise as "vgate iCar2Pro" or similar during scan
+    // We'll store the address as the name for now
+    snprintf(m_device_name, sizeof(m_device_name), "OBD2 %s", address + strlen(address) - 5);
+    
     m_connected = true;
     m_data.connected = true;
     m_data.last_update_ms = millis();
     
-    Serial.println("[OBD] Connected to iCar device successfully!");
+    Serial.printf("[OBD] Connected to %s successfully!\n", m_device_name);
+    
+    // Request VIN and ECM name once connected
+    request_vehicle_info();
+    
     return true;
 }
 
@@ -136,6 +148,11 @@ void IcarBleDriver::disconnect() {
     m_data.connected = false;
     m_rx_char = nullptr;
     m_tx_char = nullptr;
+    
+    // Clear device info
+    m_device_name[0] = '\0';
+    m_vin[0] = '\0';
+    m_ecm_name[0] = '\0';
     
     NimBLEDevice::deinit(false);
     Serial.println("[OBD] Disconnected from device");
@@ -196,7 +213,7 @@ bool IcarBleDriver::add_pid(uint8_t pid, uint32_t poll_interval_ms, const char* 
             // Update existing PID
             pid_config.poll_interval_ms = poll_interval_ms;
             pid_config.description = description;
-            Serial.printf("[OBD] Updated PID 0x%02X polling interval to %lu ms\n", pid, poll_interval_ms);
+            Serial.printf("[OBD] Updated PID 0x%02X polling interval to %u ms\n", pid, poll_interval_ms);
             return true;
         }
     }
@@ -210,7 +227,7 @@ bool IcarBleDriver::add_pid(uint8_t pid, uint32_t poll_interval_ms, const char* 
     };
     
     m_configured_pids.push_back(new_pid);
-    Serial.printf("[OBD] Added PID 0x%02X (%s) with interval %lu ms\n", pid, description, poll_interval_ms);
+    Serial.printf("[OBD] Added PID 0x%02X (%s) with interval %u ms\n", pid, description, poll_interval_ms);
     return true;
 }
 
@@ -231,4 +248,211 @@ const std::vector<obd_pid_config_t>& IcarBleDriver::get_configured_pids() {
 void IcarBleDriver::clear_all_pids() {
     m_configured_pids.clear();
     Serial.println("[OBD] Cleared all configured PIDs");
+}
+
+const char* IcarBleDriver::get_device_name() {
+    return m_device_name;
+}
+
+const char* IcarBleDriver::get_vin() {
+    return m_vin;
+}
+
+const char* IcarBleDriver::get_ecm_name() {
+    return m_ecm_name;
+}
+
+void IcarBleDriver::request_vehicle_info() {
+    if (!m_connected || !m_tx_char || !m_rx_char) {
+        Serial.println("[OBD] Cannot request vehicle info - not connected");
+        return;
+    }
+    
+    Serial.println("[OBD] Requesting vehicle VIN and ECM name...");
+    
+    // Initialize to empty
+    m_vin[0] = '\0';
+    m_ecm_name[0] = '\0';
+    
+    static EXT_RAM_ATTR char response[512];
+    
+    // Request VIN (Mode 09, PID 02)
+    Serial.println("[OBD] Sending VIN request (09 02)...");
+    if (send_obd_command("09 02\r", response, sizeof(response), 3000)) {
+        Serial.printf("[OBD] VIN response: %s\n", response);
+        if (parse_vin_response(response, m_vin)) {
+            Serial.printf("[OBD] VIN retrieved: %s\n", m_vin);
+        } else {
+            Serial.println("[OBD] Failed to parse VIN");
+            strncpy(m_vin, "N/A", sizeof(m_vin) - 1);
+        }
+    } else {
+        Serial.println("[OBD] No response for VIN request");
+        strncpy(m_vin, "N/A", sizeof(m_vin) - 1);
+    }
+    
+    // Small delay between requests
+    delay(500);
+    
+    // Request ECM name (Mode 09, PID 0A)
+    Serial.println("[OBD] Sending ECM name request (09 0A)...");
+    if (send_obd_command("09 0A\r", response, sizeof(response), 3000)) {
+        Serial.printf("[OBD] ECM response: %s\n", response);
+        if (parse_ecm_response(response, m_ecm_name)) {
+            Serial.printf("[OBD] ECM name retrieved: %s\n", m_ecm_name);
+        } else {
+            Serial.println("[OBD] Failed to parse ECM name");
+            strncpy(m_ecm_name, "N/A", sizeof(m_ecm_name) - 1);
+        }
+    } else {
+        Serial.println("[OBD] No response for ECM request");
+        strncpy(m_ecm_name, "N/A", sizeof(m_ecm_name) - 1);
+    }
+}
+
+bool IcarBleDriver::send_obd_command(const char* command, char* response, size_t max_len, uint32_t timeout_ms) {
+    if (!m_tx_char || !m_rx_char || !command || !response) return false;
+    
+    // Clear response buffer
+    response[0] = '\0';
+    
+    // Send command - cast to const uint8_t* and specify response expected
+    size_t cmd_len = strlen(command);
+    m_tx_char->writeValue((const uint8_t*)command, cmd_len, true);
+    
+    // Wait for response with timeout
+    uint32_t start_time = millis();
+    size_t response_len = 0;
+    bool received_data = false;
+    
+    while ((millis() - start_time) < timeout_ms) {
+        if (m_rx_char->canRead()) {
+            std::string value = m_rx_char->readValue();
+            if (value.length() > 0) {
+                received_data = true;
+                size_t copy_len = min(value.length(), max_len - response_len - 1);
+                memcpy(response + response_len, value.c_str(), copy_len);
+                response_len += copy_len;
+                response[response_len] = '\0';
+                
+                // Check if we got a complete response (ends with '>' prompt or contains error)
+                if (strstr(response, ">") || strstr(response, "NO DATA") || 
+                    strstr(response, "ERROR") || strstr(response, "?")) {
+                    break;
+                }
+            }
+        }
+        delay(50);
+    }
+    
+    return received_data && response_len > 0;
+}
+
+bool IcarBleDriver::parse_vin_response(const char* response, char* vin) {
+    if (!response || !vin) return false;
+    
+    // VIN response format: "49 02 01 XX XX XX..." where XX are hex ASCII codes
+    // Response is split across multiple lines for long data
+    // 49 = response to mode 09, 02 = PID 02 (VIN)
+    
+    // Look for "49 02" in response
+    const char* data_start = strstr(response, "49 02");
+    if (!data_start) {
+        // Try alternate format without space
+        data_start = strstr(response, "4902");
+        if (!data_start) return false;
+    }
+    
+    // Extract hex bytes and convert to ASCII
+    char vin_buffer[18];
+    int vin_idx = 0;
+    const char* ptr = data_start;
+    
+    // Skip past "49 02" and frame counter
+    while (*ptr && vin_idx < 17) {
+        // Look for hex pairs (e.g., "31" = '1', "41" = 'A')
+        while (*ptr && !isxdigit(*ptr)) ptr++;
+        if (!*ptr) break;
+        
+        // Skip the mode/PID bytes (49, 02, frame counter)
+        if (ptr == data_start || (ptr - data_start) < 10) {
+            while (*ptr && (isxdigit(*ptr) || *ptr == ' ')) ptr++;
+            continue;
+        }
+        
+        // Read hex pair
+        char hex_str[3] = {0};
+        if (isxdigit(*ptr)) {
+            hex_str[0] = *ptr++;
+            if (isxdigit(*ptr)) {
+                hex_str[1] = *ptr++;
+                
+                // Convert hex to char
+                int char_code = strtol(hex_str, NULL, 16);
+                if (char_code >= 32 && char_code < 127) {  // Printable ASCII
+                    vin_buffer[vin_idx++] = (char)char_code;
+                }
+            }
+        }
+    }
+    
+    if (vin_idx >= 17) {
+        memcpy(vin, vin_buffer, 17);
+        vin[17] = '\0';
+        return true;
+    }
+    
+    return false;
+}
+
+bool IcarBleDriver::parse_ecm_response(const char* response, char* ecm_name) {
+    if (!response || !ecm_name) return false;
+    
+    // ECM name response format: "49 0A ..." where ... are hex ASCII codes
+    const char* data_start = strstr(response, "49 0A");
+    if (!data_start) {
+        data_start = strstr(response, "490A");
+        if (!data_start) return false;
+    }
+    
+    // Extract hex bytes and convert to ASCII
+    char ecm_buffer[20];
+    int ecm_idx = 0;
+    const char* ptr = data_start;
+    
+    // Skip past "49 0A" and frame counter
+    while (*ptr && ecm_idx < 19) {
+        // Look for hex pairs
+        while (*ptr && !isxdigit(*ptr)) ptr++;
+        if (!*ptr) break;
+        
+        // Skip the mode/PID bytes
+        if (ptr == data_start || (ptr - data_start) < 10) {
+            while (*ptr && (isxdigit(*ptr) || *ptr == ' ')) ptr++;
+            continue;
+        }
+        
+        // Read hex pair
+        char hex_str[3] = {0};
+        if (isxdigit(*ptr)) {
+            hex_str[0] = *ptr++;
+            if (isxdigit(*ptr)) {
+                hex_str[1] = *ptr++;
+                
+                // Convert hex to char
+                int char_code = strtol(hex_str, NULL, 16);
+                if (char_code >= 32 && char_code < 127) {  // Printable ASCII
+                    ecm_buffer[ecm_idx++] = (char)char_code;
+                }
+            }
+        }
+    }
+    
+    if (ecm_idx > 0) {
+        memcpy(ecm_name, ecm_buffer, ecm_idx);
+        ecm_name[ecm_idx] = '\0';
+        return true;
+    }
+    
+    return false;
 }
