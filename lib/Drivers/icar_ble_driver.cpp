@@ -6,6 +6,9 @@
 obd_data_t IcarBleDriver::m_data = {};
 bool IcarBleDriver::m_connected = false;
 char IcarBleDriver::m_device_address[18] = "";
+char IcarBleDriver::m_device_name[32] = "";
+char IcarBleDriver::m_vin[18] = "";
+char IcarBleDriver::m_ecm_name[20] = "";
 NimBLERemoteCharacteristic* IcarBleDriver::m_rx_char = nullptr;
 NimBLERemoteCharacteristic* IcarBleDriver::m_tx_char = nullptr;
 std::vector<obd_pid_config_t> IcarBleDriver::m_configured_pids = {};
@@ -123,11 +126,24 @@ bool IcarBleDriver::connect(const char* address) {
     strncpy(m_device_address, address, sizeof(m_device_address) - 1);
     m_device_address[sizeof(m_device_address) - 1] = '\0';
     
+    // Get and store device name
+    std::string devName = pClient->getPeerAddress().toString();
+    // Try to get the actual advertised name
+    if (pClient->getValue(NimBLEUUID((uint16_t)0x2A00)).length() > 0) {
+        devName = pClient->getValue(NimBLEUUID((uint16_t)0x2A00));
+    }
+    strncpy(m_device_name, devName.c_str(), sizeof(m_device_name) - 1);
+    m_device_name[sizeof(m_device_name) - 1] = '\0';
+    
     m_connected = true;
     m_data.connected = true;
     m_data.last_update_ms = millis();
     
-    Serial.println("[OBD] Connected to iCar device successfully!");
+    Serial.printf("[OBD] Connected to %s successfully!\n", m_device_name);
+    
+    // Request VIN and ECM name once connected
+    request_vehicle_info();
+    
     return true;
 }
 
@@ -136,6 +152,11 @@ void IcarBleDriver::disconnect() {
     m_data.connected = false;
     m_rx_char = nullptr;
     m_tx_char = nullptr;
+    
+    // Clear device info
+    m_device_name[0] = '\0';
+    m_vin[0] = '\0';
+    m_ecm_name[0] = '\0';
     
     NimBLEDevice::deinit(false);
     Serial.println("[OBD] Disconnected from device");
@@ -231,4 +252,41 @@ const std::vector<obd_pid_config_t>& IcarBleDriver::get_configured_pids() {
 void IcarBleDriver::clear_all_pids() {
     m_configured_pids.clear();
     Serial.println("[OBD] Cleared all configured PIDs");
+}
+
+const char* IcarBleDriver::get_device_name() {
+    return m_device_name;
+}
+
+const char* IcarBleDriver::get_vin() {
+    return m_vin;
+}
+
+const char* IcarBleDriver::get_ecm_name() {
+    return m_ecm_name;
+}
+
+void IcarBleDriver::request_vehicle_info() {
+    if (!m_connected) return;
+    
+    Serial.println("[OBD] Requesting vehicle VIN and ECM name...");
+    
+    // Request VIN (Mode 09, PID 02)
+    // Format: "09 02\r" - mode 09 is vehicle information
+    // TODO: Implement actual OBD request/response parsing
+    // For now, set placeholder until full implementation
+    strncpy(m_vin, "PENDING", sizeof(m_vin) - 1);
+    m_vin[sizeof(m_vin) - 1] = '\0';
+    
+    // Request ECM name (Mode 09, PID 0A)
+    // Format: "09 0A\r"
+    strncpy(m_ecm_name, "PENDING", sizeof(m_ecm_name) - 1);
+    m_ecm_name[sizeof(m_ecm_name) - 1] = '\0';
+    
+    // Actual implementation would:
+    // 1. Send "09 02\r" via m_tx_char->writeValue()
+    // 2. Read response from m_rx_char
+    // 3. Parse multi-frame response (VIN is 17 characters)
+    // 4. Send "09 0A\r" for ECM name
+    // 5. Parse response
 }

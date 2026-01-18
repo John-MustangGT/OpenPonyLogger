@@ -126,10 +126,36 @@ public:
      */
     static void set_device_address(const char* address);
 
+    /**
+     * @brief Get connected device name
+     */
+    static const char* get_device_name();
+
+    /**
+     * @brief Get vehicle VIN (Vehicle Identification Number)
+     * Retrieves VIN from OBD-II Mode 09 PID 02
+     */
+    static const char* get_vin();
+
+    /**
+     * @brief Get ECU/ECM name
+     * Retrieves ECU name from OBD-II Mode 09 PID 0A
+     */
+    static const char* get_ecm_name();
+
+    /**
+     * @brief Request VIN and ECM name from vehicle
+     * Should be called once after connection established
+     */
+    static void request_vehicle_info();
+
 private:
     static obd_data_t m_data;
     static bool m_connected;
     static char m_device_address[18];
+    static char m_device_name[32];
+    static char m_vin[18];
+    static char m_ecm_name[20];
     static NimBLERemoteCharacteristic* m_rx_char;
     static NimBLERemoteCharacteristic* m_tx_char;
     static std::vector<obd_pid_config_t> m_configured_pids;

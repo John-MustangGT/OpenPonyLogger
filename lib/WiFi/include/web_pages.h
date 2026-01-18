@@ -329,6 +329,30 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                     <span class="info-label">Battery Monitor:</span>
                     <span class="info-value" id="device-battery">Checking...</span>
                 </div>
+                <div class="info-row">
+                    <span class="info-label">OBD/ELM-327:</span>
+                    <span class="info-value" id="device-obd">Checking...</span>
+                </div>
+            </div>
+            
+            <div class="info-section" id="obd-info-section" style="display: none;">
+                <h3>OBD/ELM-327 Information</h3>
+                <div class="info-row">
+                    <span class="info-label">Device Name:</span>
+                    <span class="info-value" id="obd-device-name">--</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Device Address:</span>
+                    <span class="info-value" id="obd-address">--</span>
+                </div>
+                <div class="info-row" id="obd-vin-row" style="display: none;">
+                    <span class="info-label">Vehicle VIN:</span>
+                    <span class="info-value" id="obd-vin">--</span>
+                </div>
+                <div class="info-row" id="obd-ecm-row" style="display: none;">
+                    <span class="info-label">ECM Name:</span>
+                    <span class="info-value" id="obd-ecm">--</span>
+                </div>
             </div>
             
             <div class="info-section">
@@ -544,6 +568,28 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 document.getElementById('device-gps').textContent = info.devices.gps ? 'Connected' : 'Not Found';
                 document.getElementById('device-imu').textContent = info.devices.imu ? 'Connected' : 'Not Found';
                 document.getElementById('device-battery').textContent = info.devices.battery ? 'Connected' : 'Not Found';
+                document.getElementById('device-obd').textContent = info.devices.obd ? 'Connected' : 'Not Connected';
+                
+                // Show OBD info section if connected
+                if (info.devices.obd && info.obd_info) {
+                    document.getElementById('obd-info-section').style.display = 'block';
+                    document.getElementById('obd-device-name').textContent = info.obd_info.device_name || 'Unknown';
+                    document.getElementById('obd-address').textContent = info.obd_info.address || 'Unknown';
+                    
+                    // Show VIN if available
+                    if (info.obd_info.vin) {
+                        document.getElementById('obd-vin-row').style.display = 'flex';
+                        document.getElementById('obd-vin').textContent = info.obd_info.vin;
+                    }
+                    
+                    // Show ECM name if available
+                    if (info.obd_info.ecm_name) {
+                        document.getElementById('obd-ecm-row').style.display = 'flex';
+                        document.getElementById('obd-ecm').textContent = info.obd_info.ecm_name;
+                    }
+                } else {
+                    document.getElementById('obd-info-section').style.display = 'none';
+                }
             } catch (e) {
                 console.error('Failed to load about info:', e);
             }

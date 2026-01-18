@@ -1,6 +1,7 @@
 #include "wifi_manager.h"
 #include "web_pages.h"
 #include "config_manager.h"
+#include "icar_ble_driver.h"
 #include "version_info.h"
 #include <cstdio>
 #include <ArduinoJson.h>
@@ -271,6 +272,30 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
     doc["devices"]["gps"] = true;
     doc["devices"]["imu"] = true;
     doc["devices"]["battery"] = true;
+    
+    // OBD/ELM-327 status
+    bool obd_connected = false;
+    try {
+        obd_connected = IcarBleDriver::is_connected();
+    } catch (...) {
+        obd_connected = false;
+    }
+    
+    doc["devices"]["obd"] = obd_connected;
+    if (obd_connected) {
+        doc["obd_info"]["device_name"] = String(IcarBleDriver::get_device_name());
+        doc["obd_info"]["address"] = String(IcarBleDriver::get_device_address());
+        
+        const char* vin = IcarBleDriver::get_vin();
+        const char* ecm = IcarBleDriver::get_ecm_name();
+        
+        if (vin && strlen(vin) > 0) {
+            doc["obd_info"]["vin"] = String(vin);
+        }
+        if (ecm && strlen(ecm) > 0) {
+            doc["obd_info"]["ecm_name"] = String(ecm);
+        }
+    }
     
     String json_str;
     serializeJson(doc, json_str);
