@@ -123,6 +123,16 @@ uint16_t WiFiManager::get_client_count() {
 void WiFiManager::broadcast_json(const char* json) {
     if (m_websocket == nullptr || json == nullptr) return;
     
+    // Verify we have clients before broadcasting
+    if (m_websocket->count() == 0) return;
+    
+    // Check json string length to prevent crashes
+    size_t len = strlen(json);
+    if (len == 0 || len > 2048) {
+        Serial.printf("[WiFi] Invalid JSON length: %d\n", len);
+        return;
+    }
+    
     // Send to all connected clients
     m_websocket->textAll(json);
 }

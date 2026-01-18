@@ -158,19 +158,33 @@ void RTLoggerThread::task_loop() {
                 doc["battery_current"] = m_last_battery.current;
                 doc["battery_temp"] = m_last_battery.temperature / 100.0f;
                 
-                // OBD data (if connected)
-                if (IcarBleDriver::is_connected()) {
-                    obd_data_t obd = IcarBleDriver::get_data();
-                    JsonObject obd_obj = doc["obd"].to<JsonObject>();
-                    obd_obj["connected"] = true;
-                    obd_obj["rpm"] = obd.engine_rpm;
-                    obd_obj["speed"] = obd.vehicle_speed;
-                    obd_obj["throttle"] = obd.throttle_position;
-                    obd_obj["load"] = obd.engine_load;
-                    obd_obj["coolant_temp"] = obd.coolant_temp;
-                    obd_obj["intake_temp"] = obd.intake_temp;
-                    obd_obj["maf"] = obd.maf_flow;
-                    obd_obj["timing_advance"] = obd.timing_advance;
+                // OBD data (if connected) - wrapped in safety checks
+                // Only attempt if BLE is available and won't crash
+                bool obd_available = false;
+                try {
+                    obd_available = IcarBleDriver::is_connected();
+                } catch (...) {
+                    // Silently catch any exceptions from OBD driver
+                    obd_available = false;
+                }
+                
+                if (obd_available) {
+                    try {
+                        obd_data_t obd = IcarBleDriver::get_data();
+                        JsonObject obd_obj = doc["obd"].to<JsonObject>();
+                        obd_obj["connected"] = true;
+                        obd_obj["rpm"] = obd.engine_rpm;
+                        obd_obj["speed"] = obd.vehicle_speed;
+                        obd_obj["throttle"] = obd.throttle_position;
+                        obd_obj["load"] = obd.engine_load;
+                        obd_obj["coolant_temp"] = obd.coolant_temp;
+                        obd_obj["intake_temp"] = obd.intake_temp;
+                        obd_obj["maf"] = obd.maf_flow;
+                        obd_obj["timing_advance"] = obd.timing_advance;
+                    } catch (...) {
+                        // If OBD data fetch fails, mark as disconnected
+                        doc["obd"]["connected"] = false;
+                    }
                 } else {
                     doc["obd"]["connected"] = false;
                 }
@@ -178,8 +192,10 @@ void RTLoggerThread::task_loop() {
                 // Serialize and broadcast
                 char json_buffer[768];
                 size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
-                if (n > 0) {
+                if (n > 0 && n < sizeof(json_buffer)) {
                     WiFiManager::broadcast_json(json_buffer);
+                } else if (n >= sizeof(json_buffer)) {
+                    Serial.printf("[RTLogger] WARNING: JSON buffer overflow! Size: %d, Buffer: %d\n", n, sizeof(json_buffer));
                 }
             }
         } else {
