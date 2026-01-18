@@ -268,16 +268,21 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
         doc["version"] = "1.0.0";
     #endif
     
-    // Memory information
+    // Memory information with safety checks
     JsonObject memory = doc["memory"].to<JsonObject>();
-    memory["heap_total"] = ESP.getHeapSize();
-    memory["heap_free"] = ESP.getFreeHeap();
-    memory["heap_used"] = ESP.getHeapSize() - ESP.getFreeHeap();
+    
+    uint32_t heap_size = ESP.getHeapSize();
+    uint32_t heap_free = ESP.getFreeHeap();
+    memory["heap_total"] = heap_size;
+    memory["heap_free"] = heap_free;
+    memory["heap_used"] = (heap_size > heap_free) ? (heap_size - heap_free) : 0;
     memory["heap_min_free"] = ESP.getMinFreeHeap();
     
-    memory["psram_total"] = ESP.getPsramSize();
-    memory["psram_free"] = ESP.getFreePsram();
-    memory["psram_used"] = ESP.getPsramSize() - ESP.getFreePsram();
+    uint32_t psram_size = ESP.getPsramSize();
+    uint32_t psram_free = ESP.getFreePsram();
+    memory["psram_total"] = psram_size;
+    memory["psram_free"] = psram_free;
+    memory["psram_used"] = (psram_size > psram_free) ? (psram_size - psram_free) : 0;
     memory["psram_min_free"] = ESP.getMinFreePsram();
     
     memory["flash_total"] = ESP.getFlashChipSize();

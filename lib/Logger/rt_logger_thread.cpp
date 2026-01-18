@@ -211,12 +211,11 @@ void RTLoggerThread::task_loop() {
         }
         
         // Delay until next update, compensating for execution time
+        // Always yield at least 1 tick to prevent watchdog
         TickType_t loop_end = xTaskGetTickCount();
         TickType_t elapsed = loop_end - loop_start;
-        TickType_t remaining = (elapsed < delay_ticks) ? (delay_ticks - elapsed) : 0;
-        if (remaining > 0) {
-            vTaskDelay(remaining);
-        }
+        TickType_t remaining = (elapsed < delay_ticks) ? (delay_ticks - elapsed) : 1;
+        vTaskDelay(remaining);
     }
 }
 
