@@ -297,6 +297,7 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                 </div>
                 
                 <button type="submit" id="save-btn">Save Configuration</button>
+                <button type="button" id="restart-btn" onclick="restartDevice()" style="background: #ff6b6b; margin-left: 10px;">Restart Device</button>
                 <div id="config-status" class="status-message"></div>
             </form>
         </div>
@@ -656,6 +657,32 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 }
             } catch (e) {
                 console.error('Failed to load about info:', e);
+            }
+        }
+        
+        async function restartDevice() {
+            if (!confirm('Are you sure you want to restart the device? This will disconnect all clients.')) {
+                return;
+            }
+            
+            const btn = document.getElementById('restart-btn');
+            btn.disabled = true;
+            btn.textContent = 'Restarting...';
+            
+            try {
+                const response = await fetch('/api/restart', { method: 'POST' });
+                const result = await response.json();
+                showStatus('config-status', 'Device is restarting. Reconnect in ~10 seconds.', 'success');
+                
+                // Reload page after device restarts
+                setTimeout(() => {
+                    window.location.reload();
+                }, 10000);
+            } catch (e) {
+                showStatus('config-status', 'Restart initiated', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 10000);
             }
         }
         

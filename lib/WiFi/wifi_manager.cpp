@@ -97,6 +97,7 @@ bool WiFiManager::init() {
     m_server->on("/api/config", HTTP_GET, handle_config_get);
     m_server->on("/api/config", HTTP_POST, [](AsyncWebServerRequest* request){}, nullptr, handle_config_post);
     m_server->on("/api/about", HTTP_GET, handle_about);
+    m_server->on("/api/restart", HTTP_POST, handle_restart);
     
     // Start server
     m_server->begin();
@@ -321,6 +322,15 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
     String json_str;
     serializeJson(doc, json_str);
     request->send(200, "application/json", json_str);
+}
+
+void WiFiManager::handle_restart(AsyncWebServerRequest* request) {
+    Serial.println("[WiFi] Restart requested via web interface");
+    request->send(200, "application/json", "{\"success\":true,\"message\":\"Restarting device...\"}");
+    
+    // Delay restart to allow response to be sent
+    delay(500);
+    ESP.restart();
 }
 
 void WiFiManager::handle_websocket_event(AsyncWebSocket* server, AsyncWebSocketClient* client,

@@ -77,6 +77,11 @@ private:
     static void handle_about(AsyncWebServerRequest* request);
     
     /**
+     * @brief Handle POST request to restart device
+     */
+    static void handle_restart(AsyncWebServerRequest* request);
+    
+    /**
      * @brief Handle WebSocket events (connect, disconnect, message)
      */
     static void handle_websocket_event(AsyncWebSocket* server, AsyncWebSocketClient* client,
