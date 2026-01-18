@@ -126,6 +126,12 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                     <div class="sensor-value" id="uptime">--</div>
                 </div>
             </div>
+            
+            <!-- OBD-II Data Section (shown only when connected) -->
+            <div id="obd-section" style="display: none; margin-top: 30px;">
+                <h2 style="color: #4a9eff; margin-bottom: 15px;">🚗 OBD-II Data</h2>
+                <div class="sensor-grid" id="obd-grid"></div>
+            </div>
         </div>
         
         <!-- Configuration Tab -->
@@ -402,6 +408,42 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
             const seconds = uptimeSec % 60;
             document.getElementById('uptime').textContent = 
                 `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            // Update OBD data if connected
+            if (data.obd && data.obd.connected) {
+                const obdSection = document.getElementById('obd-section');
+                const obdGrid = document.getElementById('obd-grid');
+                obdSection.style.display = 'block';
+                
+                // Clear and rebuild OBD grid
+                obdGrid.innerHTML = '';
+                
+                // Define OBD parameters to display
+                const obdParams = [
+                    { key: 'rpm', label: 'Engine RPM', unit: 'rpm', decimals: 0 },
+                    { key: 'speed', label: 'Vehicle Speed', unit: 'km/h', decimals: 1 },
+                    { key: 'throttle', label: 'Throttle Position', unit: '%', decimals: 1 },
+                    { key: 'load', label: 'Engine Load', unit: '%', decimals: 1 },
+                    { key: 'coolant_temp', label: 'Coolant Temp', unit: '°C', decimals: 1 },
+                    { key: 'intake_temp', label: 'Intake Temp', unit: '°C', decimals: 1 },
+                    { key: 'maf', label: 'MAF', unit: 'g/s', decimals: 2 },
+                    { key: 'timing_advance', label: 'Timing Advance', unit: '°', decimals: 1 }
+                ];
+                
+                obdParams.forEach(param => {
+                    if (data.obd[param.key] !== undefined && data.obd[param.key] !== 0) {
+                        const card = document.createElement('div');
+                        card.className = 'sensor-card';
+                        card.innerHTML = `
+                            <div class="sensor-label">${param.label}</div>
+                            <div class="sensor-value">${data.obd[param.key].toFixed(param.decimals)}<span class="sensor-unit">${param.unit}</span></div>
+                        `;
+                        obdGrid.appendChild(card);
+                    }
+                });
+            } else {
+                document.getElementById('obd-section').style.display = 'none';
+            }
         }
         
         async function loadConfig() {
