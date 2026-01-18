@@ -65,12 +65,8 @@ bool WiFiManager::init() {
     
     // Set up HTTP routes
     m_server->on("/", HTTP_GET, handle_root);
-    
-    // API endpoints for configuration
     m_server->on("/api/config", HTTP_GET, handle_config_get);
     m_server->on("/api/config", HTTP_POST, [](AsyncWebServerRequest* request){}, nullptr, handle_config_post);
-    
-    // API endpoint for about information
     m_server->on("/api/about", HTTP_GET, handle_about);
     
     // Start server
@@ -120,9 +116,22 @@ void WiFiManager::handle_config_get(AsyncWebServerRequest* request) {
     doc["imu_hz"] = config.imu_hz;
     doc["obd_hz"] = config.obd_hz;
     
-    String response;
-    serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    // Add PID configurations
+    JsonArray pids = doc["pids"].to<JsonArray>();
+    for (const auto& pid_pair : config.pid_configs) {
+        JsonObject pid_obj = pids.add<JsonObject>();
+        char pid_hex[8];
+        snprintf(pid_hex, sizeof(pid_hex), "0x%02X", pid_pair.second.pid);
+        pid_obj["pid"] = pid_hex;
+        pid_obj["pid_dec"] = pid_pair.second.pid;
+        pid_obj["enabled"] = pid_pair.second.enabled;
+        pid_obj["rate_hz"] = pid_pair.second.rate_hz;
+        pid_obj["name"] = pid_pair.second.name;
+    }
+    
+    String json_str;
+    serializeJson(doc, json_str);
+    request->send(200, "application/json", json_str);
 }
 
 void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
@@ -151,6 +160,7 @@ void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* da
 
 void WiFiManager::handle_about(AsyncWebServerRequest* request) {
     JsonDocument doc;
+<<<<<<< Updated upstream
     doc["version"] = PROJECT_VERSION;
     doc["git_sha"] = GIT_COMMIT_SHA;
     doc["build_date"] = BUILD_TIMESTAMP;
@@ -160,6 +170,29 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
     String response;
     serializeJson(doc, response);
     request->send(200, "application/json", response);
+=======
+    
+    #ifdef GIT_COMMIT_SHA
+        doc["git_sha"] = GIT_COMMIT_SHA;
+    #else
+        doc["git_sha"] = "unknown";
+    #endif
+    
+    #ifdef PROJECT_VERSION
+        doc["version"] = PROJECT_VERSION;
+    #else
+        doc["version"] = "1.0.0";
+    #endif
+    
+    // Device status (placeholder - could check actual hardware)
+    doc["devices"]["gps"] = true;
+    doc["devices"]["imu"] = true;
+    doc["devices"]["battery"] = true;
+    
+    String json_str;
+    serializeJson(doc, json_str);
+    request->send(200, "application/json", json_str);
+>>>>>>> Stashed changes
 }
 
 void WiFiManager::handle_websocket_event(AsyncWebSocket* server, AsyncWebSocketClient* client,

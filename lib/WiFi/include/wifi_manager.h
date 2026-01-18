@@ -62,17 +62,17 @@ private:
     static void handle_root(AsyncWebServerRequest* request);
     
     /**
-     * @brief Handle HTTP request for configuration page
+     * @brief Handle GET request for configuration
      */
     static void handle_config_get(AsyncWebServerRequest* request);
     
     /**
-     * @brief Handle HTTP POST for configuration updates
+     * @brief Handle POST request to save configuration
      */
     static void handle_config_post(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total);
     
     /**
-     * @brief Handle HTTP request for about page
+     * @brief Handle GET request for about/version information
      */
     static void handle_about(AsyncWebServerRequest* request);
     
