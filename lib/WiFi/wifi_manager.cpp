@@ -19,23 +19,51 @@ bool WiFiManager::init() {
     
     Serial.println("[WiFi] Initializing WiFi in AP mode...");
     
-    // Generate SSID from MAC address
+    // Ensure ConfigManager is initialized
+    if (!ConfigManager::init()) {
+        Serial.println("[WiFi] WARNING: ConfigManager not ready, using defaults");
+    }
+    
+    // Get configuration with fallback
+    logging_config_t config = ConfigManager::get_current();
+    
+    // Validate network config has valid data, use defaults if not
+    if (config.network.ssid[0] == '\0' || strlen(config.network.ssid) == 0) {
+        Serial.println("[WiFi] WARNING: Invalid SSID in config, using default");
+        strncpy(config.network.ssid, "PonyLogger", sizeof(config.network.ssid) - 1);
+        config.network.ssid[sizeof(config.network.ssid) - 1] = '\0';
+    }
+    
+    // Generate SSID from config + MAC address suffix
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     
     char ssid_buffer[32];
-    snprintf(ssid_buffer, sizeof(ssid_buffer), "PonyLogger-%02X%02X", mac[4], mac[5]);
+    snprintf(ssid_buffer, sizeof(ssid_buffer), "%s-%02X%02X", 
+             config.network.ssid, mac[4], mac[5]);
     m_ssid = String(ssid_buffer);
-    m_password = "";  // Open network
+    m_password = String(config.network.password);
     
     Serial.printf("[WiFi] Starting AP with SSID: %s\n", m_ssid.c_str());
     
     // Configure AP mode
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(m_ssid.c_str(), m_password.c_str());
+    WiFi.softAP(m_ssid.c_str(), m_password.length() > 0 ? m_password.c_str() : nullptr);
     
-    IPAddress ap_ip(192, 168, 4, 1);
-    IPAddress netmask(255, 255, 255, 0);
+    // Validate IP configuration
+    IPAddress ap_ip(config.network.ip[0], config.network.ip[1], 
+                     config.network.ip[2], config.network.ip[3]);
+    IPAddress netmask(config.network.subnet[0], config.network.subnet[1], 
+                      config.network.subnet[2], config.network.subnet[3]);
+    
+    // Use defaults if IP is invalid (0.0.0.0)
+    if (config.network.ip[0] == 0 && config.network.ip[1] == 0 && 
+        config.network.ip[2] == 0 && config.network.ip[3] == 0) {
+        Serial.println("[WiFi] WARNING: Invalid IP in config, using 192.168.4.1");
+        ap_ip = IPAddress(192, 168, 4, 1);
+        netmask = IPAddress(255, 255, 255, 0);
+    }
+    
     WiFi.softAPConfig(ap_ip, ap_ip, netmask);
     
     IPAddress ip = WiFi.softAPIP();

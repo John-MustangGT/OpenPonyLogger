@@ -167,6 +167,7 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                     <div class="form-group">
                         <label for="net-ssid">WiFi SSID (Network Name)</label>
                         <input type="text" id="net-ssid" name="net_ssid" maxlength="31" placeholder="PonyLogger" required>
+                        <div style="color: #888; font-size: 12px; margin-top: 5px;">Note: MAC address suffix will be added automatically (e.g., -A95C)</div>
                     </div>
                     
                     <div class="form-group">
