@@ -1,9 +1,6 @@
 #include "rt_logger_thread.h"
-#include "wifi_manager.h"
-#include "icar_ble_driver.h"
 #include <Arduino.h>
 #include <cstring>
-#include <ArduinoJson.h>
 
 RTLoggerThread::RTLoggerThread(SensorManager* sensor_manager, uint32_t update_rate_ms)
     : m_sensor_manager(sensor_manager), m_update_rate_ms(update_rate_ms),
@@ -120,88 +117,6 @@ void RTLoggerThread::task_loop() {
             m_last_battery = m_sensor_manager->get_battery();
             
             m_sample_count++;
-            
-            // Broadcast to WebSocket clients at 5Hz (every 200ms at 10Hz update rate)
-            // With 100ms update rate (10Hz), this broadcasts every other update
-            static uint32_t last_broadcast_ms = 0;
-            uint32_t now_ms = millis();
-            
-            if (WiFiManager::is_initialized() && (now_ms - last_broadcast_ms) >= 200) {
-                last_broadcast_ms = now_ms;
-                
-                // Create JSON document with sensor data
-                // Use JsonDocument to avoid dynamic allocation
-                JsonDocument doc;
-                doc["type"] = "sensor";
-                doc["uptime_ms"] = now_ms;
-                doc["sample_count"] = m_sample_count;
-                doc["is_paused"] = m_storage_paused;
-                
-                // GPS data
-                doc["gps_valid"] = m_last_gps.valid;
-                doc["latitude"] = m_last_gps.latitude;
-                doc["longitude"] = m_last_gps.longitude;
-                doc["altitude"] = m_last_gps.altitude;
-                doc["speed"] = m_last_gps.speed;
-                doc["satellites"] = m_last_gps.satellites;
-                
-                // Accelerometer
-                doc["accel_x"] = m_last_accel.x;
-                doc["accel_y"] = m_last_accel.y;
-                doc["accel_z"] = m_last_accel.z;
-                doc["temperature"] = m_last_accel.temperature;
-                
-                // Gyroscope
-                doc["gyro_x"] = m_last_gyro.x;
-                doc["gyro_y"] = m_last_gyro.y;
-                doc["gyro_z"] = m_last_gyro.z;
-                
-                // Battery data
-                doc["battery_soc"] = m_last_battery.state_of_charge;
-                doc["battery_voltage"] = m_last_battery.voltage;
-                doc["battery_current"] = m_last_battery.current;
-                doc["battery_temp"] = m_last_battery.temperature / 100.0f;
-                
-                // OBD data (if connected) - wrapped in safety checks
-                // Only attempt if BLE is available and won't crash
-                bool obd_available = false;
-                try {
-                    obd_available = IcarBleDriver::is_connected();
-                } catch (...) {
-                    // Silently catch any exceptions from OBD driver
-                    obd_available = false;
-                }
-                
-                if (obd_available) {
-                    try {
-                        obd_data_t obd = IcarBleDriver::get_data();
-                        JsonObject obd_obj = doc["obd"].to<JsonObject>();
-                        obd_obj["connected"] = true;
-                        obd_obj["rpm"] = obd.engine_rpm;
-                        obd_obj["speed"] = obd.vehicle_speed;
-                        obd_obj["throttle"] = obd.throttle_position;
-                        obd_obj["load"] = obd.engine_load;
-                        obd_obj["coolant_temp"] = obd.coolant_temp;
-                        obd_obj["intake_temp"] = obd.intake_temp;
-                        obd_obj["maf"] = obd.maf_flow;
-                        obd_obj["timing_advance"] = obd.timing_advance;
-                    } catch (...) {
-                        // If OBD data fetch fails, mark as disconnected
-                        doc["obd"]["connected"] = false;
-                    }
-                } else {
-                    doc["obd"]["connected"] = false;
-                }
-                
-                // Serialize and broadcast
-                static EXT_RAM_ATTR char json_buffer[768];
-                size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
-                if (n > 0 && n < sizeof(json_buffer)) {
-                    WiFiManager::broadcast_json(json_buffer);
-                } else if (n >= sizeof(json_buffer)) {
-                    Serial.printf("[RTLogger] WARNING: JSON buffer overflow! Size: %d, Buffer: %d\n", n, sizeof(json_buffer));
-                }
-            }
         } else {
             // Debug: Report update failure periodically
             static uint32_t last_error_report = 0;

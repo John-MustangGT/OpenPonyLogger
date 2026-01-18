@@ -164,6 +164,14 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                         <label for="obd-hz">OBD Maximum Frequency (Hz)</label>
                         <input type="number" id="obd-hz" name="obd_hz" min="1" max="100" value="10" required>
                     </div>
+                    
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="obd-ble-enabled" name="obd_ble_enabled" checked style="width: auto; margin: 0;">
+                            <span>Enable OBD-II BLE Scanning</span>
+                        </label>
+                        <p style="color: #aaa; font-size: 12px; margin: 5px 0 0 0;">Scan for ELM-327 Bluetooth OBD-II adapters. Disable to reduce resource usage at high update rates.</p>
+                    </div>
                 </div>
                 
                 <div class="config-section">
@@ -515,6 +523,7 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 document.getElementById('gps-hz').value = config.gps_hz;
                 document.getElementById('imu-hz').value = config.imu_hz;
                 document.getElementById('obd-hz').value = config.obd_hz;
+                document.getElementById('obd-ble-enabled').checked = config.obd_ble_enabled;
                 
                 // Load network configuration if present
                 if (config.network) {
@@ -550,6 +559,7 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 gps_hz: parseInt(document.getElementById('gps-hz').value),
                 imu_hz: parseInt(document.getElementById('imu-hz').value),
                 obd_hz: parseInt(document.getElementById('obd-hz').value),
+                obd_ble_enabled: document.getElementById('obd-ble-enabled').checked,
                 network: {
                     ssid: document.getElementById('net-ssid').value,
                     password: document.getElementById('net-password').value,

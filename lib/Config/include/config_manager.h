@@ -53,6 +53,9 @@ struct logging_config_t {
     uint16_t imu_hz;        // IMU (accel/gyro/compass) update rate
     uint16_t obd_hz;        // OBD global max update rate
     
+    // OBD-II BLE configuration
+    bool obd_ble_enabled;   // Enable/disable BLE scanning for OBD-II devices
+    
     // Network configuration
     network_config_t network;
     
@@ -61,7 +64,7 @@ struct logging_config_t {
     
     // Default constructor with 10Hz across the board
     logging_config_t() 
-        : main_loop_hz(10), gps_hz(10), imu_hz(10), obd_hz(10) {
+        : main_loop_hz(10), gps_hz(10), imu_hz(10), obd_hz(10), obd_ble_enabled(true) {
         // Initialize core PIDs (enabled by default at 10Hz)
         pid_configs[0x0C] = pid_config_t(0x0C, 10, true, "Engine RPM");
         pid_configs[0x0D] = pid_config_t(0x0D, 10, true, "Vehicle Speed");
@@ -144,6 +147,7 @@ private:
     static const char* KEY_GPS_HZ;
     static const char* KEY_IMU_HZ;
     static const char* KEY_OBD_HZ;
+    static const char* KEY_OBD_BLE_ENABLED;
     static const char* KEY_NET_SSID;
     static const char* KEY_NET_PASSWORD;
     static const char* KEY_NET_IP;

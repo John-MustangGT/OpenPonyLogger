@@ -122,6 +122,10 @@ uint16_t WiFiManager::get_client_count() {
     return m_websocket->count();
 }
 
+bool WiFiManager::has_clients() {
+    return get_client_count() > 0;
+}
+
 void WiFiManager::broadcast_json(const char* json) {
     if (m_websocket == nullptr || json == nullptr) return;
     
@@ -164,6 +168,7 @@ void WiFiManager::handle_config_get(AsyncWebServerRequest* request) {
     doc["gps_hz"] = config.gps_hz;
     doc["imu_hz"] = config.imu_hz;
     doc["obd_hz"] = config.obd_hz;
+    doc["obd_ble_enabled"] = config.obd_ble_enabled;
     
     // Add network configuration with null-termination safety
     JsonObject network = doc["network"].to<JsonObject>();
@@ -219,6 +224,7 @@ void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* da
     config.gps_hz = doc["gps_hz"] | 10;
     config.imu_hz = doc["imu_hz"] | 10;
     config.obd_hz = doc["obd_hz"] | 10;
+    config.obd_ble_enabled = doc["obd_ble_enabled"] | true;
     
     // Parse network configuration if provided
     if (doc.containsKey("network")) {

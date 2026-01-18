@@ -38,6 +38,12 @@ public:
     static uint16_t get_client_count();
     
     /**
+     * @brief Check if any WebSocket clients are connected
+     * @return true if at least one client is connected
+     */
+    static bool has_clients();
+    
+    /**
      * @brief Send JSON data to all connected WebSocket clients
      * @param json JSON string to send (e.g., "{\"type\": \"sensor\", ...}")
      */
