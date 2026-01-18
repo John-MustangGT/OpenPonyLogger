@@ -79,6 +79,7 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
         <div class="tabs">
             <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
             <button class="tab" onclick="showTab('configuration')">Configuration</button>
+            <button class="tab" onclick="showTab('download')">Download</button>
             <button class="tab" onclick="showTab('about')">About</button>
         </div>
         
@@ -310,6 +311,35 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
             </form>
         </div>
         
+        <!-- Download Tab -->
+        <div id="download" class="tab-content">
+            <div class="config-section">
+                <h3>Log Files</h3>
+                <p style="color: #aaa; font-size: 13px; margin-bottom: 15px;">
+                    <strong>⚠️ Warning:</strong> Logging is suspended during download operations to ensure data integrity.
+                </p>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div>
+                        <span id="log-file-count" style="color: #4a9eff; font-weight: bold;">0 files</span>
+                        <span style="color: #888; margin: 0 10px;">|</span>
+                        <span id="log-total-size" style="color: #aaa;">0 KB</span>
+                    </div>
+                    <div>
+                        <button onclick="refreshLogList()" style="background: #667eea; margin-right: 10px;">🔄 Refresh</button>
+                        <button onclick="downloadAllLogs(false)" style="background: #4a9eff; margin-right: 10px;">⬇ Download All</button>
+                        <button onclick="downloadAllLogs(true)" style="background: #ff9800;">⬇ Download All & Delete</button>
+                    </div>
+                </div>
+                
+                <div id="log-files-container" style="max-height: 600px; overflow-y: auto;">
+                    <p style="color: #888; text-align: center; padding: 40px;">Loading log files...</p>
+                </div>
+                
+                <div id="download-status" class="status-message"></div>
+            </div>
+        </div>
+        
         <!-- About Tab -->
         <div id="about" class="tab-content">
             <div class="info-section">
@@ -436,6 +466,8 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
             
             if (tabName === 'configuration') {
                 loadConfig();
+            } else if (tabName === 'download') {
+                loadLogFiles();
             } else if (tabName === 'about') {
                 loadAbout();
             }
@@ -702,6 +734,156 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
             el.className = `status-message ${type}`;
             el.style.display = 'block';
             setTimeout(() => { el.style.display = 'none'; }, 5000);
+        }
+        
+        // Download Tab Functions
+        async function loadLogFiles() {
+            try {
+                const response = await fetch('/api/logs?rescan=true');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    showStatus('download-status', 'Failed to load log files', 'error');
+                    return;
+                }
+                
+                displayLogFiles(data);
+            } catch (e) {
+                console.error('Failed to load logs:', e);
+                showStatus('download-status', 'Network error', 'error');
+            }
+        }
+        
+        function displayLogFiles(data) {
+            const container = document.getElementById('log-files-container');
+            const countEl = document.getElementById('log-file-count');
+            const sizeEl = document.getElementById('log-total-size');
+            
+            countEl.textContent = data.total_files + ' file' + (data.total_files !== 1 ? 's' : '');
+            sizeEl.textContent = formatBytes(data.total_size);
+            
+            if (data.files.length === 0) {
+                container.innerHTML = '<p style="color: #888; text-align: center; padding: 40px;">No log files found</p>';
+                return;
+            }
+            
+            let html = '<table class="pid-table" style="width: 100%;">';
+            html += '<thead><tr>';
+            html += '<th>Date/Time</th>';
+            html += '<th>UUID</th>';
+            html += '<th>Size</th>';
+            html += '<th>Blocks</th>';
+            html += '<th style="text-align: right;">Actions</th>';
+            html += '</tr></thead><tbody>';
+            
+            data.files.forEach(file => {
+                const date = file.gps_utc > 0 
+                    ? new Date(file.gps_utc * 1000).toLocaleString()
+                    : `ESP: ${(file.esp_time_us / 1000000).toFixed(0)}s`;
+                    
+                const uuid_short = file.uuid.substring(0, 8);
+                
+                html += '<tr>';
+                html += `<td style="color: #e0e0e0; font-weight: bold;">${date}</td>`;
+                html += `<td style="font-family: monospace; color: #888; font-size: 11px;">${uuid_short}...</td>`;
+                html += `<td style="color: #aaa;">${formatBytes(file.size)}</td>`;
+                html += `<td style="color: #aaa;">${file.blocks}</td>`;
+                html += '<td style="text-align: right;">';
+                html += `<button onclick="downloadLog('${file.filename}', false)" style="background: #4a9eff; padding: 8px 12px; margin: 0 5px; font-size: 12px;">⬇ Download</button>`;
+                html += `<button onclick="downloadLog('${file.filename}', true)" style="background: #ff9800; padding: 8px 12px; margin: 0 5px; font-size: 12px;">⬇ & Delete</button>`;
+                html += `<button onclick="deleteLog('${file.filename}')" style="background: #f44336; padding: 8px 12px; margin: 0 5px; font-size: 12px;">🗑 Delete</button>`;
+                html += '</td>';
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+        
+        async function downloadLog(filename, deleteAfter) {
+            try {
+                showStatus('download-status', `Downloading ${filename}...`, 'success');
+                
+                const url = `/api/logs/download?file=${encodeURIComponent(filename)}${deleteAfter ? '&delete=true' : ''}`;
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Refresh list after a delay
+                setTimeout(() => {
+                    if (deleteAfter) {
+                        refreshLogList();
+                    }
+                    showStatus('download-status', 'Download complete', 'success');
+                }, 1000);
+            } catch (e) {
+                console.error('Download failed:', e);
+                showStatus('download-status', 'Download failed', 'error');
+            }
+        }
+        
+        async function deleteLog(filename) {
+            if (!confirm(`Delete ${filename}?`)) return;
+            
+            try {
+                const response = await fetch(`/api/logs/delete?file=${encodeURIComponent(filename)}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    showStatus('download-status', 'File deleted', 'success');
+                    refreshLogList();
+                } else {
+                    showStatus('download-status', result.error || 'Delete failed', 'error');
+                }
+            } catch (e) {
+                showStatus('download-status', 'Network error', 'error');
+            }
+        }
+        
+        async function downloadAllLogs(deleteAfter) {
+            const message = deleteAfter 
+                ? 'Download all logs and delete them from device?' 
+                : 'Download all log files?';
+            
+            if (!confirm(message)) return;
+            
+            try {
+                const response = await fetch('/api/logs');
+                const data = await response.json();
+                
+                if (data.files.length === 0) {
+                    showStatus('download-status', 'No files to download', 'error');
+                    return;
+                }
+                
+                showStatus('download-status', `Downloading ${data.files.length} files...`, 'success');
+                
+                for (const file of data.files) {
+                    await downloadLog(file.filename, deleteAfter);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                
+                showStatus('download-status', 'All downloads complete', 'success');
+            } catch (e) {
+                showStatus('download-status', 'Download failed', 'error');
+            }
+        }
+        
+        function refreshLogList() {
+            loadLogFiles();
+        }
+        
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
         
         connectWebSocket();

@@ -88,6 +88,26 @@ private:
     static void handle_restart(AsyncWebServerRequest* request);
     
     /**
+     * @brief Handle GET request for list of log files
+     */
+    static void handle_logs_list(AsyncWebServerRequest* request);
+    
+    /**
+     * @brief Handle GET request to download a specific log file
+     */
+    static void handle_log_download(AsyncWebServerRequest* request);
+    
+    /**
+     * @brief Handle POST request to delete a specific log file
+     */
+    static void handle_log_delete(AsyncWebServerRequest* request);
+    
+    /**
+     * @brief Handle POST request to delete all log files
+     */
+    static void handle_logs_delete_all(AsyncWebServerRequest* request);
+    
+    /**
      * @brief Handle WebSocket events (connect, disconnect, message)
      */
     static void handle_websocket_event(AsyncWebSocket* server, AsyncWebSocketClient* client,

@@ -3,6 +3,7 @@
 #include "config_manager.h"
 #include "icar_ble_driver.h"
 #include "version_info.h"
+#include "log_file_manager.h"
 #include <cstdio>
 #include <ArduinoJson.h>
 
@@ -98,6 +99,12 @@ bool WiFiManager::init() {
     m_server->on("/api/config", HTTP_POST, [](AsyncWebServerRequest* request){}, nullptr, handle_config_post);
     m_server->on("/api/about", HTTP_GET, handle_about);
     m_server->on("/api/restart", HTTP_POST, handle_restart);
+    
+    // Log file management routes
+    m_server->on("/api/logs", HTTP_GET, handle_logs_list);
+    m_server->on("/api/logs/download", HTTP_GET, handle_log_download);
+    m_server->on("/api/logs/delete", HTTP_POST, handle_log_delete);
+    m_server->on("/api/logs/delete-all", HTTP_POST, handle_logs_delete_all);
     
     // Start server
     m_server->begin();
@@ -368,5 +375,197 @@ void WiFiManager::handle_websocket_event(AsyncWebSocket* server, AsyncWebSocketC
         default:
             break;
     }
+}
+
+void WiFiManager::handle_logs_list(AsyncWebServerRequest* request) {
+    if (!LogFileManager::init()) {
+        request->send(500, "application/json", "{\"success\":false,\"error\":\"Log manager not initialized\"}");
+        return;
+    }
+    
+    // Force rescan if requested
+    bool force_rescan = request->hasParam("rescan") && request->getParam("rescan")->value() == "true";
+    LogFileManager::scan_log_files(force_rescan);
+    
+    const std::vector<log_file_info_t>& files = LogFileManager::get_log_files();
+    
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["total_files"] = files.size();
+    doc["total_size"] = LogFileManager::get_total_log_size();
+    doc["free_space"] = LogFileManager::get_free_space();
+    
+    JsonArray files_array = doc["files"].to<JsonArray>();
+    
+    for (const auto& file_info : files) {
+        JsonObject file_obj = files_array.add<JsonObject>();
+        file_obj["filename"] = file_info.filename;
+        file_obj["size"] = file_info.file_size;
+        file_obj["blocks"] = file_info.block_count;
+        file_obj["gps_utc"] = (long long)file_info.gps_utc_timestamp;
+        file_obj["esp_time_us"] = (long long)file_info.esp_timestamp_us;
+        
+        // Format UUID as string
+        char uuid_str[37];
+        snprintf(uuid_str, sizeof(uuid_str),
+                "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                file_info.startup_id[0], file_info.startup_id[1], file_info.startup_id[2], file_info.startup_id[3],
+                file_info.startup_id[4], file_info.startup_id[5], file_info.startup_id[6], file_info.startup_id[7],
+                file_info.startup_id[8], file_info.startup_id[9], file_info.startup_id[10], file_info.startup_id[11],
+                file_info.startup_id[12], file_info.startup_id[13], file_info.startup_id[14], file_info.startup_id[15]);
+        file_obj["uuid"] = uuid_str;
+    }
+    
+    String json_str;
+    serializeJson(doc, json_str);
+    request->send(200, "application/json", json_str);
+}
+
+void WiFiManager::handle_log_download(AsyncWebServerRequest* request) {
+    if (!request->hasParam("file")) {
+        request->send(400, "application/json", "{\"success\":false,\"error\":\"Missing file parameter\"}");
+        return;
+    }
+    
+    String filename = request->getParam("file")->value();
+    bool delete_after = request->hasParam("delete") && request->getParam("delete")->value() == "true";
+    
+    log_file_info_t file_info;
+    if (!LogFileManager::get_file_info(filename, file_info)) {
+        request->send(404, "application/json", "{\"success\":false,\"error\":\"File not found\"}");
+        return;
+    }
+    
+    // Suspend logging during download
+    LogFileManager::set_download_active(true);
+    
+    String full_path = "/sd/" + filename;
+    
+    // Stream file with decompression and validation
+    AsyncWebServerResponse* response = request->beginChunkedResponse(
+        "application/octet-stream",
+        [filename, delete_after, full_path](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+            static File download_file;
+            static bool file_opened = false;
+            static bool header_sent = false;
+            static log_block_header_t current_block;
+            static EXT_RAM_ATTR uint8_t decompressed_buffer[8192];
+            static size_t decompressed_size = 0;
+            static size_t decompressed_offset = 0;
+            
+            // First call - open file
+            if (index == 0) {
+                download_file = SD.open(full_path.c_str(), FILE_READ);
+                if (!download_file) {
+                    Serial.printf("[WiFi] ERROR: Cannot open %s\n", full_path.c_str());
+                    LogFileManager::set_download_active(false);
+                    return 0;
+                }
+                file_opened = true;
+                header_sent = false;
+                decompressed_size = 0;
+                decompressed_offset = 0;
+                Serial.printf("[WiFi] Starting download: %s\n", filename.c_str());
+            }
+            
+            if (!file_opened) {
+                return 0;
+            }
+            
+            size_t bytes_written = 0;
+            
+            // Send session header (raw, not decompressed)
+            if (!header_sent) {
+                session_start_header_t session_header;
+                download_file.read((uint8_t*)&session_header, sizeof(session_header));
+                size_t to_copy = min(sizeof(session_header), maxLen);
+                memcpy(buffer, &session_header, to_copy);
+                header_sent = true;
+                return to_copy;
+            }
+            
+            // Stream decompressed data blocks
+            while (bytes_written < maxLen) {
+                // Need to decompress next block?
+                if (decompressed_offset >= decompressed_size) {
+                    if (!download_file.available()) {
+                        // End of file
+                        download_file.close();
+                        file_opened = false;
+                        
+                        if (delete_after) {
+                            Serial.printf("[WiFi] Deleting after download: %s\n", filename.c_str());
+                            LogFileManager::delete_file(filename);
+                        }
+                        
+                        LogFileManager::set_download_active(false);
+                        Serial.printf("[WiFi] Download complete: %s\n", filename.c_str());
+                        return bytes_written;
+                    }
+                    
+                    // Read and decompress next block
+                    decompressed_size = LogFileManager::read_and_decompress_block(
+                        download_file, current_block, decompressed_buffer, sizeof(decompressed_buffer)
+                    );
+                    
+                    if (decompressed_size == 0) {
+                        // Error or end of valid blocks
+                        download_file.close();
+                        file_opened = false;
+                        LogFileManager::set_download_active(false);
+                        return bytes_written;
+                    }
+                    
+                    decompressed_offset = 0;
+                }
+                
+                // Copy from decompressed buffer
+                size_t remaining = decompressed_size - decompressed_offset;
+                size_t space_left = maxLen - bytes_written;
+                size_t to_copy = min(remaining, space_left);
+                
+                memcpy(buffer + bytes_written, decompressed_buffer + decompressed_offset, to_copy);
+                bytes_written += to_copy;
+                decompressed_offset += to_copy;
+            }
+            
+            return bytes_written;
+        }
+    );
+    
+    response->addHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+    request->send(response);
+}
+
+void WiFiManager::handle_log_delete(AsyncWebServerRequest* request) {
+    if (!request->hasParam("file")) {
+        request->send(400, "application/json", "{\"success\":false,\"error\":\"Missing file parameter\"}");
+        return;
+    }
+    
+    String filename = request->getParam("file")->value();
+    
+    if (LogFileManager::delete_file(filename)) {
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"File deleted\"}");
+    } else {
+        request->send(500, "application/json", "{\"success\":false,\"error\":\"Delete failed\"}");
+    }
+}
+
+void WiFiManager::handle_logs_delete_all(AsyncWebServerRequest* request) {
+    // Suspend logging during bulk delete
+    LogFileManager::set_download_active(true);
+    
+    uint32_t deleted_count = LogFileManager::delete_all_files();
+    
+    LogFileManager::set_download_active(false);
+    
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["deleted_count"] = deleted_count;
+    
+    String json_str;
+    serializeJson(doc, json_str);
+    request->send(200, "application/json", json_str);
 }
 
