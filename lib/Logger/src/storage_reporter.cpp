@@ -105,7 +105,7 @@ void StorageReporter::print_debug(const char* message) {
 }
 
 void StorageReporter::printf_debug(const char* format, ...) {
-    char buffer[256];
+    static EXT_RAM_BSS_ATTR char buffer[256];
     va_list args;
     va_start(args, format);
     vsnprintf(buffer, sizeof(buffer), format, args);

@@ -274,7 +274,7 @@ void IcarBleDriver::request_vehicle_info() {
     m_vin[0] = '\0';
     m_ecm_name[0] = '\0';
     
-    char response[512];
+    static EXT_RAM_BSS_ATTR char response[512];
     
     // Request VIN (Mode 09, PID 02)
     Serial.println("[OBD] Sending VIN request (09 02)...");

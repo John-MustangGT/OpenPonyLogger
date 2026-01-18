@@ -190,7 +190,7 @@ void RTLoggerThread::task_loop() {
                 }
                 
                 // Serialize and broadcast
-                char json_buffer[768];
+                static EXT_RAM_BSS_ATTR char json_buffer[768];
                 size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
                 if (n > 0 && n < sizeof(json_buffer)) {
                     WiFiManager::broadcast_json(json_buffer);
