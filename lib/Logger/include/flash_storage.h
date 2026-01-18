@@ -48,10 +48,11 @@ public:
      * @param gyro Gyroscope data
      * @param compass Compass data
      * @param battery Battery data
+     * @param obd OBD-II data
      */
     void write_sample(const gps_data_t& gps, const accel_data_t& accel,
                      const gyro_data_t& gyro, const compass_data_t& compass,
-                     const battery_data_t& battery);
+                     const battery_data_t& battery, const obd_data_t& obd);
     
     /**
      * @brief Pause writing (for downloads)
@@ -98,7 +99,7 @@ public:
     /**
      * @brief Get session header from flash
      */
-    bool read_session_header(session_header_t* header);
+    bool read_session_header(session_start_header_t* header);
     
 private:
     // Core 0 writer task
@@ -121,7 +122,7 @@ private:
     size_t m_bytes_written;
     
     // Session tracking
-    session_header_t m_session_header;
+    session_start_header_t m_session_header;
     uint8_t m_startup_id[16];  // UUID
     
     // Sample buffering
@@ -148,6 +149,10 @@ private:
                 double latitude, longitude;
                 float altitude, speed, heading, hdop;
             } gps;
+            struct {
+                float rpm, speed, throttle;
+                float coolant_temp, maf, intake_temp;
+            } obd;
             struct {
                 float voltage, current, soc;
             } battery;

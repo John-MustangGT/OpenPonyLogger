@@ -383,9 +383,8 @@ void WiFiManager::handle_logs_list(AsyncWebServerRequest* request) {
         return;
     }
     
-    // Force rescan if requested
-    bool force_rescan = request->hasParam("rescan") && request->getParam("rescan")->value() == "true";
-    LogFileManager::scan_log_files(force_rescan);
+    // Scan for current session
+    LogFileManager::scan_log_files();
     
     const std::vector<log_file_info_t>& files = LogFileManager::get_log_files();
     
@@ -458,54 +457,6 @@ void WiFiManager::handle_log_download(AsyncWebServerRequest* request) {
     response->addHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
     request->send(response);
 }
-                    if (!download_file.available()) {
-                        // End of file
-                        download_file.close();
-                        file_opened = false;
-                        
-                        if (delete_after) {
-                            Serial.printf("[WiFi] Deleting after download: %s\n", filename.c_str());
-                            LogFileManager::delete_file(filename);
-                        }
-                        
-                        LogFileManager::set_download_active(false);
-                        Serial.printf("[WiFi] Download complete: %s\n", filename.c_str());
-                        return bytes_written;
-                    }
-                    
-                    // Read and decompress next block
-                    decompressed_size = LogFileManager::read_and_decompress_block(
-                        download_file, current_block, decompressed_buffer, sizeof(decompressed_buffer)
-                    );
-                    
-                    if (decompressed_size == 0) {
-                        // Error or end of valid blocks
-                        download_file.close();
-                        file_opened = false;
-                        LogFileManager::set_download_active(false);
-                        return bytes_written;
-                    }
-                    
-                    decompressed_offset = 0;
-                }
-                
-                // Copy from decompressed buffer
-                size_t remaining = decompressed_size - decompressed_offset;
-                size_t space_left = maxLen - bytes_written;
-                size_t to_copy = min(remaining, space_left);
-                
-                memcpy(buffer + bytes_written, decompressed_buffer + decompressed_offset, to_copy);
-                bytes_written += to_copy;
-                decompressed_offset += to_copy;
-            }
-            
-            return bytes_written;
-        }
-    );
-    
-    response->addHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
-    request->send(response);
-}
 
 void WiFiManager::handle_log_delete(AsyncWebServerRequest* request) {
     if (!request->hasParam("file")) {
@@ -515,24 +466,25 @@ void WiFiManager::handle_log_delete(AsyncWebServerRequest* request) {
     
     String filename = request->getParam("file")->value();
     
-    if (LogFileManager::delete_file(filename)) {
-        request->send(200, "application/json", "{\"success\":true,\"message\":\"File deleted\"}");
+    // Flash version: can only erase entire partition
+    if (LogFileManager::erase_all_data()) {
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"All data erased\"}");
     } else {
-        request->send(500, "application/json", "{\"success\":false,\"error\":\"Delete failed\"}");
+        request->send(500, "application/json", "{\"success\":false,\"error\":\"Erase failed\"}");
     }
 }
 
 void WiFiManager::handle_logs_delete_all(AsyncWebServerRequest* request) {
-    // Suspend logging during bulk delete
+    // Suspend logging during erase
     LogFileManager::set_download_active(true);
     
-    uint32_t deleted_count = LogFileManager::delete_all_files();
+    bool success = LogFileManager::erase_all_data();
     
     LogFileManager::set_download_active(false);
     
     JsonDocument doc;
-    doc["success"] = true;
-    doc["deleted_count"] = deleted_count;
+    doc["success"] = success;
+    doc["message"] = success ? "Partition erased" : "Erase failed";
     
     String json_str;
     serializeJson(doc, json_str);

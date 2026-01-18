@@ -17,11 +17,16 @@ Usage:
 """
 
 import struct
-import zlib
+import zlib  # CRC32 only
 import uuid
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, BinaryIO
 from datetime import datetime, timezone
+
+try:
+    import heatshrink2
+except ImportError:
+    heatshrink2 = None  # Optional: fallback to manual decompression
 
 
 class OpenPonyError(Exception):
@@ -44,11 +49,18 @@ class UnsupportedVersionError(OpenPonyError):
     pass
 
 
+# Compression type constants
+COMPRESSION_NONE = 0x00
+COMPRESSION_HEATSHRINK = 0x01
+COMPRESSION_RLE_DELTA = 0x02
+
+
 @dataclass
 class SessionHeader:
     """Session start header (68 bytes)"""
     magic: int                    # 0x53545230 ("STR0")
     version: int                  # Format version (0x01)
+    compression_type: int         # Compression type used (0=none, 1=heatshrink, 2=rle_delta)
     startup_id: bytes             # UUID (16 bytes)
     esp_time_at_start: int        # ESP timer at startup (microseconds)
     gps_utc_at_lock: int          # GPS UTC time at lock (seconds since epoch, 0=unknown)
@@ -71,6 +83,16 @@ class SessionHeader:
     def firmware_sha(self) -> str:
         """Get firmware SHA as hex string"""
         return self.fw_sha.hex()
+    
+    @property
+    def compression_name(self) -> str:
+        """Get compression type as human-readable string"""
+        names = {
+            COMPRESSION_NONE: "None (raw)",
+            COMPRESSION_HEATSHRINK: "Heatshrink (LZSS)",
+            COMPRESSION_RLE_DELTA: "RLE+Delta"
+        }
+        return names.get(self.compression_type, f"Unknown (0x{self.compression_type:02x})")
     
     @property
     def has_gps_time(self) -> bool:
@@ -198,6 +220,7 @@ class OpenPonyDecoder:
         if version != self.SUPPORTED_VERSION:
             raise UnsupportedVersionError(f"Unsupported version: 0x{version:02X}")
         
+        compression_type = header_data[5]
         startup_id = header_data[8:24]
         esp_time_at_start, = struct.unpack('<q', header_data[24:32])
         gps_utc_at_lock, = struct.unpack('<q', header_data[32:40])
@@ -214,6 +237,7 @@ class OpenPonyDecoder:
         self._session = SessionHeader(
             magic=magic,
             version=version,
+            compression_type=compression_type,
             startup_id=startup_id,
             esp_time_at_start=esp_time_at_start,
             gps_utc_at_lock=gps_utc_at_lock,
@@ -271,10 +295,25 @@ class OpenPonyDecoder:
             if header.crc32 != crc_calc:
                 raise CRCMismatchError(f"Block CRC mismatch: {header.crc32:08X} != {crc_calc:08X}")
             
-            # Decompress
+            # Decompress based on compression type
             try:
-                uncompressed_data = zlib.decompress(compressed_data)
-            except zlib.error as e:
+                if self._session.compression_type == COMPRESSION_NONE:
+                    # No compression - data is raw
+                    uncompressed_data = compressed_data
+                elif self._session.compression_type == COMPRESSION_HEATSHRINK:
+                    # Heatshrink (LZSS) compression
+                    if heatshrink2:
+                        uncompressed_data = heatshrink2.decompress(compressed_data)
+                    else:
+                        # Try zlib as fallback (won't work for true heatshrink)
+                        print("WARNING: heatshrink2 library not available, trying zlib fallback")
+                        uncompressed_data = zlib.decompress(compressed_data)
+                elif self._session.compression_type == COMPRESSION_RLE_DELTA:
+                    # RLE+Delta decompression
+                    uncompressed_data = self._decompress_rle_delta(compressed_data)
+                else:
+                    raise OpenPonyError(f"Unknown compression type: 0x{self._session.compression_type:02x}")
+            except Exception as e:
                 raise OpenPonyError(f"Decompression failed: {e}")
             
             if len(uncompressed_data) != header.uncompressed_size:
@@ -306,6 +345,37 @@ class OpenPonyDecoder:
             compressed_size=compressed_size,
             crc32=crc32
         )
+    
+    @staticmethod
+    def _decompress_rle_delta(compressed_data: bytes) -> bytes:
+        """
+        Decompress RLE+Delta encoded data
+        Format: 
+        - 0x00-0x7F: Literal run of N+1 bytes
+        - 0x80-0xFF: Repeat last byte (N-0x80)+1 times
+        """
+        output = bytearray()
+        pos = 0
+        
+        while pos < len(compressed_data):
+            tag = compressed_data[pos]
+            pos += 1
+            
+            if tag < 0x80:
+                # Literal run
+                literal_len = tag + 1
+                if pos + literal_len > len(compressed_data):
+                    raise OpenPonyError(f"RLE+Delta: corrupted literal run at pos {pos}")
+                output.extend(compressed_data[pos:pos+literal_len])
+                pos += literal_len
+            else:
+                # Repeat last byte
+                repeat_count = (tag - 0x80) + 1
+                if len(output) == 0:
+                    raise OpenPonyError("RLE+Delta: repeat without previous byte")
+                output.extend([output[-1]] * repeat_count)
+        
+        return bytes(output)
     
     def _parse_samples(self, data: bytes, block_timestamp_us: int) -> List[Sample]:
         """Parse sensor samples from decompressed data"""

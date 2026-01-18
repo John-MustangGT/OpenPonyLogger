@@ -3,7 +3,6 @@
 #include <esp_random.h>
 #include <esp_mac.h>
 #include <string.h>
-#include <zlib.h>
 
 FlashStorage::FlashStorage()
     : m_partition(nullptr), m_nvs_handle(0),
@@ -69,6 +68,7 @@ bool FlashStorage::begin() {
     memset(&m_session_header, 0, sizeof(m_session_header));
     m_session_header.magic = SESSION_START_MAGIC;
     m_session_header.version = 0x01;
+    m_session_header.compression_type = COMPRESSION_NONE;  // No compression for now
     memcpy(m_session_header.startup_id, m_startup_id, 16);
     m_session_header.esp_time_at_start = esp_timer_get_time();
     m_session_header.gps_utc_at_lock = 0;  // Will be updated when GPS locks
@@ -159,7 +159,7 @@ void FlashStorage::end() {
 
 void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel,
                                 const gyro_data_t& gyro, const compass_data_t& compass,
-                                const battery_data_t& battery) {
+                                const battery_data_t& battery, const obd_data_t& obd) {
     if (!m_running || m_paused) {
         return;
     }
@@ -170,33 +170,34 @@ void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel
     SampleData sample;
     sample.type = 0x01;  // SAMPLE_ACCEL
     sample.timestamp_us = now;
-    sample.data.xyz.x = accel.accel_x;
-    sample.data.xyz.y = accel.accel_y;
-    sample.data.xyz.z = accel.accel_z;
+    sample.data.xyz.x = accel.x;
+    sample.data.xyz.y = accel.y;
+    sample.data.xyz.z = accel.z;
     xQueueSend(m_sample_queue, &sample, 0);  // Don't block
     
     // Queue gyroscope
     sample.type = 0x02;  // SAMPLE_GYRO
-    sample.data.xyz.x = gyro.gyro_x;
-    sample.data.xyz.y = gyro.gyro_y;
-    sample.data.xyz.z = gyro.gyro_z;
+    sample.data.xyz.x = gyro.x;
+    sample.data.xyz.y = gyro.y;
+    sample.data.xyz.z = gyro.z;
     xQueueSend(m_sample_queue, &sample, 0);
     
     // Queue compass
     sample.type = 0x03;  // SAMPLE_COMPASS
-    sample.data.xyz.x = compass.comp_x;
-    sample.data.xyz.y = compass.comp_y;
-    sample.data.xyz.z = compass.comp_z;
+    sample.data.xyz.x = compass.x;
+    sample.data.xyz.y = compass.y;
+    sample.data.xyz.z = compass.z;
     xQueueSend(m_sample_queue, &sample, 0);
     
     // Queue GPS if valid
-    if (gps.fix_quality > 0) {
+    if (gps.valid) {
         // Update session header with GPS time on first lock
         if (m_session_header.gps_utc_at_lock == 0) {
             // Convert GPS time to Unix timestamp
             // This is simplified - real impl would parse GPS date/time properly
-            m_session_header.gps_utc_at_lock = gps.timestamp_ms / 1000;
-            Serial.printf("[FlashStorage] GPS time locked: %lld\n", m_session_header.gps_utc_at_lock);
+            // For now, just use current system time when GPS lock occurs
+            m_session_header.gps_utc_at_lock = time(nullptr);
+            Serial.printf("[FlashStorage] GPS lock acquired\n");
         }
         
         sample.type = 0x04;  // SAMPLE_GPS
@@ -204,15 +205,26 @@ void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel
         sample.data.gps.longitude = gps.longitude;
         sample.data.gps.altitude = gps.altitude;
         sample.data.gps.speed = gps.speed;
-        sample.data.gps.heading = gps.heading;
-        sample.data.gps.hdop = gps.hdop;
+        // Note: heading and hdop not in gps_data_t, would need derived from other data
+        xQueueSend(m_sample_queue, &sample, 0);
+    }
+    
+    // Queue OBD-II data if valid
+    if (obd.engine_rpm > 0 || obd.vehicle_speed > 0) {  // Simple validity check
+        sample.type = 0x06;  // SAMPLE_OBD
+        sample.data.obd.rpm = obd.engine_rpm;
+        sample.data.obd.speed = obd.vehicle_speed;
+        sample.data.obd.throttle = obd.throttle_position;
+        sample.data.obd.coolant_temp = obd.coolant_temp;
+        sample.data.obd.maf = obd.maf_flow;
+        sample.data.obd.intake_temp = obd.intake_temp;
         xQueueSend(m_sample_queue, &sample, 0);
     }
     
     // Queue battery
     sample.type = 0x07;  // SAMPLE_BATTERY
     sample.data.battery.voltage = battery.voltage;
-    sample.data.battery.current = battery.charge_rate;
+    sample.data.battery.current = battery.current;
     sample.data.battery.soc = battery.state_of_charge;
     xQueueSend(m_sample_queue, &sample, 0);
 }
@@ -312,28 +324,13 @@ void FlashStorage::flush_block() {
         return;  // Nothing to flush
     }
     
-    // Compress sample data
-    uLongf compressed_size = compressBound(m_sample_buffer_pos);
-    uint8_t* compressed_buffer = (uint8_t*)malloc(compressed_size);
-    if (!compressed_buffer) {
-        Serial.println("[FlashStorage] ERROR: Failed to allocate compression buffer!");
-        m_sample_buffer_pos = 0;
-        return;
-    }
+    // No compression for now - store data as-is
+    // For future: can add heatshrink or other compression here
+    uint8_t* data_to_write = m_sample_buffer;
+    size_t data_size = m_sample_buffer_pos;
     
-    int result = compress2(compressed_buffer, &compressed_size,
-                          m_sample_buffer, m_sample_buffer_pos,
-                          Z_DEFAULT_COMPRESSION);
-    
-    if (result != Z_OK) {
-        Serial.printf("[FlashStorage] ERROR: Compression failed: %d\n", result);
-        free(compressed_buffer);
-        m_sample_buffer_pos = 0;
-        return;
-    }
-    
-    // Calculate CRC32 of compressed data
-    uint32_t crc = esp_crc32_le(0, compressed_buffer, compressed_size);
+    // Calculate CRC32 of data
+    uint32_t crc = esp_crc32_le(0, data_to_write, data_size);
     
     // Create block header
     log_block_header_t block_header;
@@ -343,16 +340,16 @@ void FlashStorage::flush_block() {
     memcpy(block_header.startup_id, m_startup_id, 16);
     block_header.timestamp_us = m_block_timestamp_us;
     block_header.uncompressed_size = m_sample_buffer_pos;
-    block_header.compressed_size = compressed_size;
+    block_header.compressed_size = data_size;  // Same size, no compression
     block_header.crc32 = crc;
     
     // Calculate total block size
-    size_t total_size = sizeof(log_block_header_t) + compressed_size;
+    size_t total_size = sizeof(log_block_header_t) + data_size;
     
     // Check if we need to wrap around
     if (m_write_offset + total_size > m_partition_size) {
         Serial.println("[FlashStorage] Wrapping circular buffer...");
-        m_write_offset = sizeof(session_header_t);  // Start after session header
+        m_write_offset = sizeof(session_start_header_t);  // Start after session header
     }
     
     // Erase sectors if needed (flash must be erased before writing)
@@ -370,27 +367,23 @@ void FlashStorage::flush_block() {
                                        &block_header, sizeof(log_block_header_t));
     if (err != ESP_OK) {
         Serial.printf("[FlashStorage] ERROR: Failed to write block header: %d\n", err);
-        free(compressed_buffer);
         m_sample_buffer_pos = 0;
         return;
     }
     
     m_write_offset += sizeof(log_block_header_t);
     
-    // Write compressed payload
+    // Write data (uncompressed)
     err = esp_partition_write(m_partition, m_write_offset,
-                             compressed_buffer, compressed_size);
+                             data_to_write, data_size);
     if (err != ESP_OK) {
         Serial.printf("[FlashStorage] ERROR: Failed to write payload: %d\n", err);
-        free(compressed_buffer);
         m_sample_buffer_pos = 0;
         return;
     }
     
-    m_write_offset += compressed_size;
+    m_write_offset += data_size;
     m_bytes_written += total_size;
-    
-    free(compressed_buffer);
     
     // Save offset periodically (every 10 blocks)
     static int block_count = 0;
@@ -402,8 +395,8 @@ void FlashStorage::flush_block() {
     // Debug output (throttled)
     static uint32_t last_debug = 0;
     if (millis() - last_debug > 10000) {
-        Serial.printf("[FlashStorage] Wrote block: %d bytes (compressed %d -> %d), offset=%d\n",
-                     total_size, m_sample_buffer_pos, compressed_size, m_write_offset);
+        Serial.printf("[FlashStorage] Wrote block: %d bytes (uncompressed), offset=%d\n",
+                     total_size, m_write_offset);
         last_debug = millis();
     }
     
@@ -414,7 +407,7 @@ void FlashStorage::flush_block() {
 void FlashStorage::write_session_header() {
     // Calculate CRC32 (exclude crc32 field itself)
     uint32_t crc = esp_crc32_le(0, (uint8_t*)&m_session_header,
-                                offsetof(session_header_t, crc32));
+                                offsetof(session_start_header_t, crc32));
     m_session_header.crc32 = crc;
     
     // Erase first sector
@@ -422,13 +415,13 @@ void FlashStorage::write_session_header() {
     
     // Write header at start of partition
     esp_err_t err = esp_partition_write(m_partition, 0,
-                                       &m_session_header, sizeof(session_header_t));
+                                       &m_session_header, sizeof(session_start_header_t));
     if (err != ESP_OK) {
         Serial.printf("[FlashStorage] ERROR: Failed to write session header: %d\n", err);
         return;
     }
     
-    m_write_offset = sizeof(session_header_t);
+    m_write_offset = sizeof(session_start_header_t);
     Serial.printf("[FlashStorage] Wrote session header at offset 0, next write at %d\n", m_write_offset);
 }
 
@@ -458,12 +451,12 @@ size_t FlashStorage::read_flash(size_t offset, uint8_t* buffer, size_t size) {
     return to_read;
 }
 
-bool FlashStorage::read_session_header(session_header_t* header) {
+bool FlashStorage::read_session_header(session_start_header_t* header) {
     if (!m_partition || !header) {
         return false;
     }
     
-    esp_err_t err = esp_partition_read(m_partition, 0, header, sizeof(session_header_t));
+    esp_err_t err = esp_partition_read(m_partition, 0, header, sizeof(session_start_header_t));
     if (err != ESP_OK) {
         return false;
     }
@@ -474,7 +467,7 @@ bool FlashStorage::read_session_header(session_header_t* header) {
     }
     
     // Verify CRC
-    uint32_t crc = esp_crc32_le(0, (uint8_t*)header, offsetof(session_header_t, crc32));
+    uint32_t crc = esp_crc32_le(0, (uint8_t*)header, offsetof(session_start_header_t, crc32));
     if (crc != header->crc32) {
         return false;
     }

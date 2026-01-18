@@ -2,19 +2,20 @@
 #include <Arduino.h>
 
 SensorManager::SensorManager()
-    : m_gps(nullptr), m_accel(nullptr), m_gyro(nullptr), m_compass(nullptr), m_battery(nullptr) {
+    : m_gps(nullptr), m_accel(nullptr), m_gyro(nullptr), m_compass(nullptr), m_battery(nullptr), m_obd(nullptr) {
 }
 
 SensorManager::~SensorManager() {
 }
 
 bool SensorManager::init(IGPSSensor* gps, IAccelSensor* accel, IGyroSensor* gyro, 
-              ICompassSensor* compass, IBatterySensor* battery) {
+              ICompassSensor* compass, IBatterySensor* battery, IOBDSensor* obd) {
     m_gps = gps;
     m_accel = accel;
     m_gyro = gyro;
     m_compass = compass;
     m_battery = battery;
+    m_obd = obd;
 
     bool success = true;
 
@@ -31,6 +32,9 @@ bool SensorManager::init(IGPSSensor* gps, IAccelSensor* accel, IGyroSensor* gyro
         success = false;
     }
     if (m_battery && !m_battery->init()) {
+        success = false;
+    }
+    if (m_obd && !m_obd->init()) {
         success = false;
     }
 
@@ -81,6 +85,14 @@ bool SensorManager::update_all() {
             success = false;
         }
     }
+    // Only update OBD if BLE is connected
+    if (m_obd && m_obd->is_connected()) {
+        bool obd_ok = m_obd->update();
+        if (!obd_ok) {
+            if (should_debug) Serial.println("  OBD update failed");
+            success = false;
+        }
+    }
     
     if (should_debug && !success) {
         Serial.flush();
@@ -121,6 +133,14 @@ bool SensorManager::update_battery() {
     return false;
 }
 
+bool SensorManager::update_obd() {
+    // Only update if BLE is connected
+    if (m_obd && m_obd->is_connected()) {
+        return m_obd->update();
+    }
+    return false;
+}
+
 gps_data_t SensorManager::get_gps() const {
     if (m_gps) {
         return m_gps->get_data();
@@ -156,6 +176,13 @@ battery_data_t SensorManager::get_battery() const {
     return battery_data_t{};
 }
 
+obd_data_t SensorManager::get_obd() const {
+    if (m_obd) {
+        return m_obd->get_data();
+    }
+    return obd_data_t{};
+}
+
 bool SensorManager::gps_valid() const {
     return m_gps && m_gps->is_valid();
 }
@@ -174,5 +201,13 @@ bool SensorManager::compass_valid() const {
 
 bool SensorManager::battery_valid() const {
     return m_battery && m_battery->is_valid();
+}
+
+bool SensorManager::obd_valid() const {
+    return m_obd && m_obd->is_valid();
+}
+
+bool SensorManager::obd_connected() const {
+    return m_obd && m_obd->is_connected();
 }
 

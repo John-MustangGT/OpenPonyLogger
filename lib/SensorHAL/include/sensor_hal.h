@@ -122,6 +122,19 @@ public:
 };
 
 /**
+ * @brief OBD-II HAL Interface
+ */
+class IOBDSensor {
+public:
+    virtual ~IOBDSensor() = default;
+    virtual bool init() = 0;
+    virtual bool update() = 0;
+    virtual obd_data_t get_data() const = 0;
+    virtual bool is_valid() const = 0;
+    virtual bool is_connected() const = 0;
+};
+
+/**
  * @brief Sensor Manager - Central HAL interface for all sensors
  */
 class SensorManager {
@@ -130,7 +143,8 @@ public:
     ~SensorManager();
 
     bool init(IGPSSensor* gps, IAccelSensor* accel, IGyroSensor* gyro, 
-              ICompassSensor* compass, IBatterySensor* battery = nullptr);
+              ICompassSensor* compass, IBatterySensor* battery = nullptr,
+              IOBDSensor* obd = nullptr);
     
     bool update_all();
     
@@ -138,6 +152,7 @@ public:
     bool update_gps();
     bool update_imu();      // Updates accel, gyro, compass together
     bool update_battery();
+    bool update_obd();      // Updates OBD-II data (only if connected)
     
     // Generic sensor access functions
     gps_data_t get_gps() const;
@@ -145,6 +160,7 @@ public:
     gyro_data_t get_gyro() const;
     compass_data_t get_comp() const;
     battery_data_t get_battery() const;
+    obd_data_t get_obd() const;
     
     // Validity checks
     bool gps_valid() const;
@@ -152,6 +168,8 @@ public:
     bool gyro_valid() const;
     bool compass_valid() const;
     bool battery_valid() const;
+    bool obd_valid() const;
+    bool obd_connected() const;  // Check if BLE is connected
 
 private:
     IGPSSensor* m_gps;
@@ -159,6 +177,7 @@ private:
     IGyroSensor* m_gyro;
     ICompassSensor* m_compass;
     IBatterySensor* m_battery;
+    IOBDSensor* m_obd;
 };
 
 #endif // SENSOR_HAL_H

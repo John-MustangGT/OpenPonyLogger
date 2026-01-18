@@ -42,8 +42,8 @@ uint32_t LogFileManager::scan_log_files() {
     }
     
     // Read session header
-    session_header_t header;
-    esp_err_t err = esp_partition_read(s_partition, 0, &header, sizeof(session_header_t));
+    session_start_header_t header;
+    esp_err_t err = esp_partition_read(s_partition, 0, &header, sizeof(session_start_header_t));
     if (err != ESP_OK) {
         Serial.println("[LogFileManager] Failed to read session header");
         return 0;
@@ -56,7 +56,7 @@ uint32_t LogFileManager::scan_log_files() {
     }
     
     // Verify CRC
-    uint32_t crc = esp_crc32_le(0, (uint8_t*)&header, offsetof(session_header_t, crc32));
+    uint32_t crc = esp_crc32_le(0, (uint8_t*)&header, offsetof(session_start_header_t, crc32));
     if (crc != header.crc32) {
         Serial.println("[LogFileManager] Session header CRC mismatch");
         return 0;

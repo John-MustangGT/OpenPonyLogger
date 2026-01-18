@@ -4,7 +4,7 @@
 
 The OpenPony Logger uses a custom binary format (`.opl` extension) designed for efficient storage of high-frequency sensor data from GPS, IMU, and OBD-II sources. The format features:
 
-- **Compression**: Data blocks are compressed using DEFLATE/zlib
+- **Compression**: Data blocks are compressed using Heatshrink (LZSS)
 - **Data Integrity**: CRC32 checksums on all headers and data blocks
 - **Session Tracking**: UUID-based session identification
 - **Time Synchronization**: GPS UTC time correlation with ESP32 timer
@@ -59,7 +59,7 @@ Following the session header are one or more compressed data blocks:
 
 #### Compressed Payload
 
-Immediately following each block header is the compressed payload (DEFLATE/zlib format):
+Immediately following each block header is the compressed payload (Heatshrink/LZSS format):
 - Size: `compressed_size` bytes
 - After decompression: `uncompressed_size` bytes
 - Contains binary-packed sensor samples

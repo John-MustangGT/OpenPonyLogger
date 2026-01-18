@@ -5,6 +5,8 @@
 #include "icm20948_gyro_wrapper.h"
 #include "icm20948_compass_wrapper.h"
 #include "max17048_driver.h"
+#include "icar_ble_driver.h"
+#include "icar_ble_wrapper.h"
 #include "rt_logger_thread.h"
 #include "flash_storage.h"
 #include "storage_reporter.h"
@@ -55,15 +57,21 @@ ICM20948CompassWrapper* compass_wrapper = nullptr;
 // MAX17048 Battery monitor driver instance
 MAX17048Driver* battery_driver = nullptr;
 
+// IcarBle OBD-II driver wrapper instance
+IcarBleWrapper* obd_wrapper = nullptr;
+
 /**
  * @brief Callback function for storage write events
  */
 void on_storage_write(const gps_data_t& gps, const accel_data_t& accel,
                       const gyro_data_t& gyro, const compass_data_t& compass,
                       const battery_data_t& battery) {
+    // Get OBD data from sensor manager
+    obd_data_t obd = sensor_manager.get_obd();
+    
     // Write to flash storage (Core 0 task)
     if (flash_storage != nullptr) {
-        flash_storage->write_sample(gps, accel, gyro, compass, battery);
+        flash_storage->write_sample(gps, accel, gyro, compass, battery, obd);
     }
     
     // Report to status monitor
@@ -141,9 +149,26 @@ bool init_sensors() {
     compass_wrapper = new ICM20948CompassWrapper(imu_driver);
     reporter.print_debug("  ✓ Wrappers created");
     
+    // Initialize OBD-II BLE driver (must run on Core 0 due to BLE stack)
+    reporter.print_debug("  → Initializing OBD-II BLE driver (vgate iCar 2 Pro)...");
+    if (!IcarBleDriver::init()) {
+        reporter.print_debug("  ✗ WARNING: Failed to initialize OBD BLE driver, continuing without OBD");
+        obd_wrapper = nullptr;
+    } else {
+        reporter.print_debug("  ✓ OBD BLE stack initialized");
+        
+        // Start scanning for OBD device in background
+        reporter.print_debug("  → Starting BLE scan for vgate iCar 2 Pro...");
+        IcarBleDriver::start_scan();
+        reporter.print_debug("  ✓ BLE scan started (will auto-connect when device found)");
+        
+        // Create OBD wrapper
+        obd_wrapper = new IcarBleWrapper();
+    }
+    
     // Initialize sensor manager with the drivers
     reporter.print_debug("  → Initializing Sensor Manager...");
-    if (!sensor_manager.init(gps_driver, imu_driver, gyro_wrapper, compass_wrapper, battery_driver)) {
+    if (!sensor_manager.init(gps_driver, imu_driver, gyro_wrapper, compass_wrapper, battery_driver, obd_wrapper)) {
         reporter.print_debug("  ✗ ERROR: Failed to initialize sensor manager");
         return false;
     }
