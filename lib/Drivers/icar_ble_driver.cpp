@@ -213,7 +213,7 @@ bool IcarBleDriver::add_pid(uint8_t pid, uint32_t poll_interval_ms, const char* 
             // Update existing PID
             pid_config.poll_interval_ms = poll_interval_ms;
             pid_config.description = description;
-            Serial.printf("[OBD] Updated PID 0x%02X polling interval to %lu ms\n", pid, poll_interval_ms);
+            Serial.printf("[OBD] Updated PID 0x%02X polling interval to %u ms\n", pid, poll_interval_ms);
             return true;
         }
     }
@@ -227,7 +227,7 @@ bool IcarBleDriver::add_pid(uint8_t pid, uint32_t poll_interval_ms, const char* 
     };
     
     m_configured_pids.push_back(new_pid);
-    Serial.printf("[OBD] Added PID 0x%02X (%s) with interval %lu ms\n", pid, description, poll_interval_ms);
+    Serial.printf("[OBD] Added PID 0x%02X (%s) with interval %u ms\n", pid, description, poll_interval_ms);
     return true;
 }
 
@@ -274,7 +274,7 @@ void IcarBleDriver::request_vehicle_info() {
     m_vin[0] = '\0';
     m_ecm_name[0] = '\0';
     
-    static EXT_RAM_BSS_ATTR char response[512];
+    static EXT_RAM_ATTR char response[512];
     
     // Request VIN (Mode 09, PID 02)
     Serial.println("[OBD] Sending VIN request (09 02)...");

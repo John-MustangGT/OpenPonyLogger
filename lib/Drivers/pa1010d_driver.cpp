@@ -293,7 +293,7 @@ bool PA1010DDriver::read_i2c_nmea_buffer() {
     
     if (!m_wire) return false;
     
-    static EXT_RAM_BSS_ATTR char sentence_buffer[256];
+    static EXT_RAM_ATTR char sentence_buffer[256];
     static int buffer_pos = 0;
     static uint32_t last_i2c_debug = 0;
     static uint32_t read_attempts = 0;

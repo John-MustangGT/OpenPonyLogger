@@ -268,6 +268,22 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
         doc["version"] = "1.0.0";
     #endif
     
+    // Memory information
+    JsonObject memory = doc["memory"].to<JsonObject>();
+    memory["heap_total"] = ESP.getHeapSize();
+    memory["heap_free"] = ESP.getFreeHeap();
+    memory["heap_used"] = ESP.getHeapSize() - ESP.getFreeHeap();
+    memory["heap_min_free"] = ESP.getMinFreeHeap();
+    
+    memory["psram_total"] = ESP.getPsramSize();
+    memory["psram_free"] = ESP.getFreePsram();
+    memory["psram_used"] = ESP.getPsramSize() - ESP.getFreePsram();
+    memory["psram_min_free"] = ESP.getMinFreePsram();
+    
+    memory["flash_total"] = ESP.getFlashChipSize();
+    memory["sketch_size"] = ESP.getSketchSize();
+    memory["sketch_free"] = ESP.getFreeSketchSpace();
+    
     // Device status (placeholder - could check actual hardware)
     doc["devices"]["gps"] = true;
     doc["devices"]["imu"] = true;

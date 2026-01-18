@@ -356,6 +356,42 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
             </div>
             
             <div class="info-section">
+                <h3>Memory Usage</h3>
+                <div class="info-row">
+                    <span class="info-label">Heap (SRAM) Used:</span>
+                    <span class="info-value" id="heap-used">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Heap (SRAM) Free:</span>
+                    <span class="info-value" id="heap-free">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Heap Min Free:</span>
+                    <span class="info-value" id="heap-min-free">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">PSRAM Used:</span>
+                    <span class="info-value" id="psram-used">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">PSRAM Free:</span>
+                    <span class="info-value" id="psram-free">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">PSRAM Min Free:</span>
+                    <span class="info-value" id="psram-min-free">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Flash Used (Sketch):</span>
+                    <span class="info-value" id="flash-used">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Flash Free:</span>
+                    <span class="info-value" id="flash-free">Loading...</span>
+                </div>
+            </div>
+            
+            <div class="info-section">
                 <h3>License</h3>
                 <div class="license-box">
 MIT License
@@ -589,6 +625,34 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                     }
                 } else {
                     document.getElementById('obd-info-section').style.display = 'none';
+                }
+                
+                // Display memory information
+                if (info.memory) {
+                    const formatBytes = (bytes) => {
+                        if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
+                        if (bytes >= 1024) return (bytes / 1024).toFixed(2) + ' KB';
+                        return bytes + ' B';
+                    };
+                    
+                    const formatPercent = (used, total) => {
+                        if (total === 0) return '0%';
+                        return ((used / total) * 100).toFixed(1) + '%';
+                    };
+                    
+                    document.getElementById('heap-used').textContent = 
+                        `${formatBytes(info.memory.heap_used)} (${formatPercent(info.memory.heap_used, info.memory.heap_total)})`;
+                    document.getElementById('heap-free').textContent = formatBytes(info.memory.heap_free);
+                    document.getElementById('heap-min-free').textContent = formatBytes(info.memory.heap_min_free);
+                    
+                    document.getElementById('psram-used').textContent = 
+                        `${formatBytes(info.memory.psram_used)} (${formatPercent(info.memory.psram_used, info.memory.psram_total)})`;
+                    document.getElementById('psram-free').textContent = formatBytes(info.memory.psram_free);
+                    document.getElementById('psram-min-free').textContent = formatBytes(info.memory.psram_min_free);
+                    
+                    document.getElementById('flash-used').textContent = 
+                        `${formatBytes(info.memory.sketch_size)} (${formatPercent(info.memory.sketch_size, info.memory.flash_total)})`;
+                    document.getElementById('flash-free').textContent = formatBytes(info.memory.sketch_free);
                 }
             } catch (e) {
                 console.error('Failed to load about info:', e);

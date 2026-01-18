@@ -106,6 +106,7 @@ void RTLoggerThread::task_loop() {
     }
     
     while (m_running) {
+        TickType_t loop_start = xTaskGetTickCount();
         // Update all sensors through HAL
         if (m_sensor_manager->update_all()) {
             // Capture latest sensor data
@@ -190,7 +191,7 @@ void RTLoggerThread::task_loop() {
                 }
                 
                 // Serialize and broadcast
-                static EXT_RAM_BSS_ATTR char json_buffer[768];
+                static EXT_RAM_ATTR char json_buffer[768];
                 size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
                 if (n > 0 && n < sizeof(json_buffer)) {
                     WiFiManager::broadcast_json(json_buffer);
@@ -209,8 +210,13 @@ void RTLoggerThread::task_loop() {
             }
         }
         
-        // Delay until next update
-        vTaskDelay(delay_ticks);
+        // Delay until next update, compensating for execution time
+        TickType_t loop_end = xTaskGetTickCount();
+        TickType_t elapsed = loop_end - loop_start;
+        TickType_t remaining = (elapsed < delay_ticks) ? (delay_ticks - elapsed) : 0;
+        if (remaining > 0) {
+            vTaskDelay(remaining);
+        }
     }
 }
 
