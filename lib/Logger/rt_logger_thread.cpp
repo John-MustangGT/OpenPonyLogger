@@ -105,6 +105,8 @@ void RTLoggerThread::task_loop() {
         first_run = false;
     }
     
+    uint32_t iterations_since_yield = 0;
+    
     while (m_running) {
         TickType_t loop_start = xTaskGetTickCount();
         // Update all sensors through HAL
@@ -211,11 +213,21 @@ void RTLoggerThread::task_loop() {
         }
         
         // Delay until next update, compensating for execution time
-        // Always yield at least 1 tick to prevent watchdog
         TickType_t loop_end = xTaskGetTickCount();
         TickType_t elapsed = loop_end - loop_start;
-        TickType_t remaining = (elapsed < delay_ticks) ? (delay_ticks - elapsed) : 1;
-        vTaskDelay(remaining);
+        
+        if (elapsed < delay_ticks) {
+            // Normal case: we have time to spare, delay the remainder
+            vTaskDelay(delay_ticks - elapsed);
+            iterations_since_yield = 0;
+        } else {
+            // Execution took longer than period - yield every 10 iterations for watchdog
+            iterations_since_yield++;
+            if (iterations_since_yield >= 10) {
+                vTaskDelay(1);  // Minimal yield to feed watchdog
+                iterations_since_yield = 0;
+            }
+        }
     }
 }
 
