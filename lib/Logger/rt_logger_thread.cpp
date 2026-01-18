@@ -213,14 +213,25 @@ void RTLoggerThread::task_loop() {
             }
         }
         
-        // Delay until next update using absolute timing
-        // If we're running behind, vTaskDelayUntil still yields at least 1 tick for watchdog
+        // Delay until next update using absolute timing with safety checks
         TickType_t now = xTaskGetTickCount();
-        if ((now - next_wake_time) > delay_ticks) {
-            // We've fallen significantly behind - reset timing base to prevent runaway
-            next_wake_time = now;
-            vTaskDelay(1);  // Minimal yield for watchdog
+        TickType_t elapsed_since_target = now - next_wake_time;
+        
+        if (elapsed_since_target > (delay_ticks * 2)) {
+            // Severely behind - reset timing and warn
+            static uint32_t last_warn = 0;
+            if (millis() - last_warn > 5000) {
+                Serial.printf("[RTLogger] WARNING: Running slow - execution taking >%dms\n", m_update_rate_ms * 2);
+                last_warn = millis();
+            }
+            next_wake_time = now + delay_ticks;  // Start fresh from now
+            vTaskDelay(2);  // Yield more aggressively
+        } else if (elapsed_since_target > delay_ticks) {
+            // Moderately behind - reset and minimal yield
+            next_wake_time = now + delay_ticks;
+            vTaskDelay(1);
         } else {
+            // On time - use precise absolute timing
             vTaskDelayUntil(&next_wake_time, delay_ticks);
         }
     }
