@@ -111,6 +111,12 @@ public:
      * @param ble_name BLE device name
      */
     static void show_info_screen(const char* ip_address, const char* ble_name);
+    
+    /**
+     * @brief Display shutdown countdown screen
+     * @param seconds_remaining Seconds until shutdown
+     */
+    static void show_shutdown_screen(uint32_t seconds_remaining);
 
 private:
     static Adafruit_ST7789* m_tft;
@@ -134,7 +140,8 @@ public:
         BOOTING,      // Red
         NO_GPS_FIX,   // Yellow flashing at 1Hz
         GPS_3D_FIX,   // Green
-        PAUSED        // Yellow flashing at 0.2Hz
+        PAUSED,       // Yellow flashing at 0.2Hz
+        SHUTDOWN      // Purple pulsing (USB power lost, countdown active)
     };
 
     /**

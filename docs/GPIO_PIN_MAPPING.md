@@ -9,7 +9,7 @@ This document provides a comprehensive mapping of all GPIO pins used in the Open
 
 | GPIO | Function | Direction | Interface | Notes |
 |------|----------|-----------|-----------|-------|
-| **GPIO0** | Button D0 (Bottom) | Input (Pull-up) | Digital | Pause/Resume Storage (HIGH→LOW when pressed) |
+| **GPIO0** | Button D0 (Bottom) | Input (Pull-up) | Digital | Pause/Resume Storage (HIGH→LOW when pressed) / Deep sleep wake |
 | **GPIO1** | Button D1 (Middle) | Input | Digital | Cycle Display Mode (LOW→HIGH when pressed) |
 | **GPIO2** | Button D2 (Top) | Input | Digital | Mark Event (LOW→HIGH when pressed) |
 | **GPIO3** | I2C SDA | Bidirectional | I2C | STEMMA QT connector (400kHz) |
@@ -18,6 +18,7 @@ This document provides a comprehensive mapping of all GPIO pins used in the Open
 | **GPIO13** | Red LED | Output | Digital | Status indicator LED (active HIGH) |
 | **GPIO16** | GPS RX | Input | UART | GPS receiver (UART mode) - Serial1 |
 | **GPIO17** | GPS TX | Output | UART | GPS transmitter (UART mode) - Serial1 |
+| **GPIO19** | USB Power Detect (VBUS) | Input | Digital | USB power detection (HIGH = USB powered) / Deep sleep wake |
 | **GPIO33** | NeoPixel | Output | WS2812B | Built-in status LED (GRB + 800kHz) |
 | **GPIO35** | SPI MOSI | Output | SPI (HSPI) | Hardware SPI for TFT display |
 | **GPIO36** | SPI CLK | Output | SPI (HSPI) | Hardware SPI clock for TFT display |
@@ -63,6 +64,7 @@ This document provides a comprehensive mapping of all GPIO pins used in the Open
     - 🟡 Yellow (1Hz flash): Searching for GPS fix
     - 🟢 Green (solid): GPS 3D fix acquired
     - 🟡 Yellow (0.2Hz flash): Data logging paused
+    - 🟣 Purple (pulsing): USB power lost, shutdown countdown active
   - Defined in: [lib/Display/st7789_display.cpp](../lib/Display/st7789_display.cpp#L321)
 
 ---
@@ -88,6 +90,27 @@ This document provides a comprehensive mapping of all GPIO pins used in the Open
   - Configuration: Output, held HIGH to enable power
   - Shared between STEMMA QT and TFT display
   - Defined in: [src/main.cpp](../src/main.cpp#L23)
+
+---
+
+### Power Management
+
+- **GPIO19** - VBUS Detection (USB Power)
+  - Function: Detects USB power presence
+  - Configuration: Input (HIGH = USB powered, LOW = battery only)
+  - Features:
+    - Monitors USB connection status
+    - Triggers 60-second shutdown countdown when USB power lost
+    - Wake source for deep sleep (rising edge = USB restored)
+  - Power states:
+    - USB present: Normal operation
+    - USB lost >60s: Graceful shutdown → deep sleep
+    - Deep sleep current: ~50 µA (weeks of battery life)
+  - Defined in: [src/main.cpp](../src/main.cpp#L35)
+
+**Deep Sleep Wake Sources:**
+1. GPIO19 (VBUS) rising edge → USB power restored → Fresh logging session
+2. GPIO0 (D0 button) falling edge → User button → Boot with logging paused
 
 ---
 

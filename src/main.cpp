@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_sleep.h>
 #include "sensor_hal.h"
 #include "pa1010d_driver.h"
 #include "icm20948_driver.h"
@@ -29,6 +30,10 @@
 #define BUTTON_D0           0   // Bottom button - Pause/Resume storage
 #define BUTTON_D1           1   // Middle button - Cycle display mode
 #define BUTTON_D2           2   // Top button - Mark event
+
+// Power Management
+#define VBUS_DETECT_PIN     19  // USB power detection (HIGH = USB powered)
+#define USB_TIMEOUT_MS      60000  // 1 minute timeout before shutdown
 
 // GPS Communication Mode Selection
 // Set to true for I2C (default), false for UART
@@ -196,6 +201,27 @@ void setup() {
     Serial.println("\n\n\n=== BOOT START ===");
     Serial.flush();
     
+    // Check wake-up cause
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+    bool woke_from_usb = false;
+    bool woke_from_button = false;
+    
+    switch (wakeup_reason) {
+        case ESP_SLEEP_WAKEUP_EXT0:
+            Serial.println("▶ Woke from deep sleep: USB power restored (GPIO19)");
+            woke_from_usb = true;
+            break;
+        case ESP_SLEEP_WAKEUP_EXT1:
+            Serial.println("▶ Woke from deep sleep: Button press (GPIO0)");
+            woke_from_button = true;
+            break;
+        case ESP_SLEEP_WAKEUP_UNDEFINED:
+        default:
+            Serial.println("▶ Normal boot (not from deep sleep)");
+            break;
+    }
+    Serial.flush();
+    
     // Initialize serial communication for debugging
     // ESP32-S3 needs extra time to establish USB JTAG connection
     reporter.init(115200);
@@ -214,6 +240,11 @@ void setup() {
     Serial.println("║        OpenPonyLogger - Real-Time Data Logger              ║");
     Serial.println("║              ESP32-S3 Feather TFT                          ║");
     Serial.println("╚═══════════════════════════════════════════════════════════╝");
+    Serial.flush();
+    
+    // Initialize VBUS detection pin
+    pinMode(VBUS_DETECT_PIN, INPUT);
+    Serial.println("✓ USB power detection enabled (GPIO19)");
     Serial.flush();
     
     Serial.println("▶ Initializing hardware...");
@@ -310,6 +341,18 @@ void setup() {
     
     Serial.println("✓ RT Logger thread started");
     Serial.flush();
+    
+    // Handle wake-up behavior
+    if (woke_from_button) {
+        // Woke from button press - pause logging initially
+        Serial.println("▶ Wake from button: Logging paused (press D0 to start)");
+        rt_logger->pause_storage();
+    } else if (woke_from_usb) {
+        // Woke from USB restore - start fresh session automatically
+        Serial.println("▶ Wake from USB: Starting fresh logging session");
+        // Logging is already enabled by default
+    }
+    // Normal boot - logging starts automatically
     
     // Initialize flash storage (Core 0 writer task)
     Serial.println("\n[8/9] Initializing Flash Storage...");

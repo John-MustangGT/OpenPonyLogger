@@ -314,6 +314,45 @@ void ST7789Display::show_info_screen(const char* ip_address, const char* ble_nam
     m_tft->println("Press D1 to cycle");
 }
 
+void ST7789Display::show_shutdown_screen(uint32_t seconds_remaining) {
+    if (!m_initialized || m_tft == nullptr) return;
+    
+    // Clear screen
+    m_tft->fillScreen(ST77XX_BLACK);
+    
+    // Title
+    m_tft->setTextColor(ST77XX_MAGENTA);
+    m_tft->setTextSize(2);
+    m_tft->setCursor(20, 10);
+    m_tft->println("POWER LOSS");
+    
+    // Warning icon (simple exclamation)
+    m_tft->setTextColor(ST77XX_YELLOW);
+    m_tft->setTextSize(4);
+    m_tft->setCursor(100, 35);
+    m_tft->println("!");
+    
+    // Shutdown message
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(15, 75);
+    m_tft->println("USB power disconnected");
+    
+    // Countdown
+    m_tft->setTextColor(ST77XX_CYAN);
+    m_tft->setTextSize(2);
+    m_tft->setCursor(40, 95);
+    char countdown[32];
+    snprintf(countdown, sizeof(countdown), "Shutdown: %us", seconds_remaining);
+    m_tft->println(countdown);
+    
+    // Footer
+    m_tft->setTextColor(ST77XX_GREEN);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(10, 120);
+    m_tft->println("Connect USB to cancel");
+}
+
 // ============================================================================
 // NeoPixel Status Indicator Implementation
 // ============================================================================
@@ -391,11 +430,38 @@ void NeoPixelStatus::setState(State state) {
             m_pixel->show();
             Serial.println("[NeoPixel] State: PAUSED (Yellow 0.2Hz flash)");
             break;
+            
+        case State::SHUTDOWN:
+            // Purple (pulsing)
+            m_pixel->setPixelColor(0, m_pixel->Color(128, 0, 128));
+            m_pixel->show();
+            Serial.println("[NeoPixel] State: SHUTDOWN (Purple pulsing)");
+            break;
     }
 }
 
 void NeoPixelStatus::update(uint32_t current_ms) {
     if (!m_initialized || m_pixel == nullptr || !m_enabled) {
+        return;
+    }
+    
+    // Handle pulsing for SHUTDOWN state (purple breathing effect)
+    if (m_current_state == State::SHUTDOWN) {
+        // Pulse interval: 1 second (500ms up, 500ms down)
+        uint32_t pulse_time = (current_ms - m_last_flash_time) % 1000;
+        uint8_t brightness;
+        
+        if (pulse_time < 500) {
+            // Fade up
+            brightness = map(pulse_time, 0, 500, 30, 255);
+        } else {
+            // Fade down
+            brightness = map(pulse_time, 500, 1000, 255, 30);
+        }
+        
+        // Apply purple color with breathing brightness
+        m_pixel->setPixelColor(0, m_pixel->Color(brightness/2, 0, brightness/2));
+        m_pixel->show();
         return;
     }
     

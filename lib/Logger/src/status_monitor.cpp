@@ -6,12 +6,17 @@
 #include <Arduino.h>
 #include <cstdio>
 #include <esp_log.h>
+#include <esp_sleep.h>
 #include <ArduinoJson.h>
 
 // Button GPIO pins
 #define BUTTON_D0 0   // Pause/Resume
 #define BUTTON_D1 1   // Cycle display mode
 #define BUTTON_D2 2   // Mark Event
+#define VBUS_DETECT_PIN 19  // USB power detection
+
+// Power management settings
+#define USB_TIMEOUT_MS 60000  // 1 minute
 
 // Button debounce settings
 #define BUTTON_DEBOUNCE_MS 20
@@ -25,7 +30,11 @@ StatusMonitor::StatusMonitor(RTLoggerThread* rt_logger, uint32_t report_interval
       m_task_handle(nullptr),
       m_running(false),
       m_write_count(0),
-      m_last_report_time(0) {
+      m_last_report_time(0),
+      m_usb_powered(true),
+      m_usb_loss_time(0),
+      m_shutdown_pending(false),
+      m_shutdown_initiated(false) {
 }
 
 StatusMonitor::~StatusMonitor() {
@@ -261,6 +270,59 @@ void StatusMonitor::task_loop() {
         }
         d2_last_state = d2_state;
         
+        // ===== USB Power Monitoring =====
+        bool usb_present = (digitalRead(VBUS_DETECT_PIN) == HIGH);
+        
+        if (!m_shutdown_pending) {
+            if (usb_present && !m_usb_powered) {
+                // USB power restored
+                Serial.println("[Power] USB power restored!");
+                m_usb_powered = true;
+                m_usb_loss_time = 0;
+            } else if (!usb_present && m_usb_powered) {
+                // USB power lost - start countdown
+                Serial.println("[Power] USB power lost! Starting 60-second countdown...");
+                m_usb_powered = false;
+                m_usb_loss_time = now;
+                m_shutdown_pending = true;
+                
+                // Set NeoPixel to shutdown state (purple pulsing)
+                NeoPixelStatus::setState(NeoPixelStatus::State::SHUTDOWN);
+            }
+        }
+        
+        // Handle shutdown countdown
+        if (m_shutdown_pending && !m_shutdown_initiated) {
+            if (usb_present) {
+                // Power restored - cancel shutdown
+                Serial.println("[Power] USB restored - shutdown canceled!");
+                m_shutdown_pending = false;
+                m_usb_powered = true;
+                m_usb_loss_time = 0;
+                
+                // Restore previous NeoPixel state (will be updated in next status update)
+            } else {
+                // Check if timeout expired
+                uint32_t time_since_loss = now - m_usb_loss_time;
+                if (time_since_loss >= USB_TIMEOUT_MS) {
+                    // Timeout expired - initiate shutdown
+                    Serial.println("[Power] Countdown complete - initiating shutdown...");
+                    m_shutdown_initiated = true;
+                    
+                    // Stop the task loop after this iteration
+                    m_running = false;
+                } else {
+                    // Update shutdown screen every second
+                    static uint32_t last_shutdown_update = 0;
+                    if (now - last_shutdown_update >= 1000) {
+                        uint32_t seconds_remaining = (USB_TIMEOUT_MS - time_since_loss) / 1000;
+                        ST7789Display::show_shutdown_screen(seconds_remaining);
+                        last_shutdown_update = now;
+                    }
+                }
+            }
+        }
+        
         // Broadcast sensor data via WebSocket at 2Hz (every 500ms)
         // Only when clients are connected to minimize overhead
         static uint32_t last_ws_broadcast_ms = 0;
@@ -368,5 +430,38 @@ void StatusMonitor::task_loop() {
         
         // Small delay to prevent task from consuming all CPU
         vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    // Task loop has exited - handle shutdown if initiated
+    if (m_shutdown_initiated) {
+        Serial.println("[Power] Executing graceful shutdown sequence...");
+        
+        // Close current logging session
+        if (m_rt_logger != nullptr) {
+            Serial.println("[Power] Closing logging session...");
+            // The RTLogger thread will write the final header when stopped
+        }
+        
+        // Configure wake sources
+        Serial.println("[Power] Configuring wake sources...");
+        
+        // Wake on GPIO19 (VBUS) rising edge - USB power restored
+        esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_DETECT_PIN, 1);
+        
+        // Wake on GPIO0 (D0 button) falling edge - button press
+        esp_sleep_enable_ext1_wakeup(1ULL << BUTTON_D0, ESP_EXT1_WAKEUP_ANY_LOW);
+        
+        // Turn off display
+        ST7789Display::off();
+        
+        // Final message
+        Serial.println("[Power] Entering deep sleep...");
+        Serial.println("[Power] Wake sources: USB power (GPIO19) or D0 button (GPIO0)");
+        Serial.flush();
+        
+        delay(100);
+        
+        // Enter deep sleep
+        esp_deep_sleep_start();
     }
 }

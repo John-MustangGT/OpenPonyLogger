@@ -48,6 +48,11 @@ public:
      * @brief Print current status immediately
      */
     void print_status_now();
+    
+    /**
+     * @brief Check if shutdown is in progress
+     */
+    bool is_shutdown_pending() const { return m_shutdown_pending; }
 
 private:
     RTLoggerThread* m_rt_logger;
@@ -56,6 +61,12 @@ private:
     bool m_running;
     uint32_t m_write_count;
     uint32_t m_last_report_time;
+    
+    // Power management
+    bool m_usb_powered;
+    uint32_t m_usb_loss_time;
+    bool m_shutdown_pending;
+    bool m_shutdown_initiated;
     
     // Static task function wrapper
     static void task_wrapper(void* arg);
