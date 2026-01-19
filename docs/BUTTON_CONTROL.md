@@ -7,13 +7,16 @@ Three buttons connected to GPIO pins on the Adafruit ESP32-S3 Feather:
 
 | Button | GPIO | Pin Name | Function |
 |--------|------|----------|----------|
-| D0 | GPIO5 | Bottom | Pause/Resume Storage |
-| D1 | GPIO6 | Middle | Reserved |
-| D2 | GPIO8 | Top | Mark Event |
+| D0 | GPIO0 | Bottom | Pause/Resume Storage |
+| D1 | GPIO1 | Middle | Cycle Display Mode |
+| D2 | GPIO2 | Top | Mark Event |
 
-**Connection:** All buttons use INPUT_PULLUP (pull-up resistor enabled)
-- Unpressed: GPIO reads HIGH
-- Pressed: GPIO reads LOW
+**Pull Configuration:**
+- **D0 (GPIO0):** `INPUT_PULLUP` - HIGH by default, LOW when pressed
+- **D1 (GPIO1):** `INPUT` - LOW by default, HIGH when pressed
+- **D2 (GPIO2):** `INPUT` - LOW by default, HIGH when pressed
+
+**Note:** D0 has a different pull configuration than D1/D2 for deep sleep wake-up functionality.
 
 ---
 
@@ -23,6 +26,11 @@ Three buttons connected to GPIO pins on the Adafruit ESP32-S3 Feather:
 - **First Press:** Pauses storage writes (data collection continues)
 - **Second Press:** Resumes storage writes
 - **Repeating:** Toggles between paused and running states
+
+### Deep Sleep Wake-Up
+D0 can wake the device from deep sleep:
+- **Wake Trigger:** Falling edge on GPIO0 (button press)
+- **Wake Behavior:** Device starts in PAUSED state (press D0 again to resume logging)
 
 ### NeoPixel Feedback During Pause
 When paused, the NeoPixel changes animation:
