@@ -5,6 +5,7 @@
 | Component | Part Number/Description | Quantity | Est. Cost | Status |
 |-----------|------------------------|----------|-----------|--------|
 | Microcontroler | [ESP32-S3 Feather](https://www.adafruit.com/product/5691) | 1 | $25 | |
+| SD Card/RTC | [Adalogger FeatherWing](https://www.adafruit.com/product/2922) | 1 | $9 | |
 | GPS Module | [PA1010D GPS](https://www.adafruit.com/product/4415) | 1 | $30 | |
 | Accelerometer/Gyro | [ICM-20948](https://www.adafruit.com/product/4554) | 1 | $15 | |
 | Battery | [Lithium Ion Polymer Battery - 3.7v 500mAh](https://www.adafruit.com/product/1578) | 1 | $8 | |
