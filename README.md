@@ -79,6 +79,18 @@ GitHub: https://github.com/John-MustangGT/OpenPonyLogger
 **Target Vehicle:** 2014 Ford Mustang GT (S197) "Ciara"  
 **Inspiration:** Carroll Shelby's "foundation first" philosophy applied to data acquisition
 
+## Related Projects
+
+### OpenPyPony
+CircuitPython-based testbed version of the data logger. Excellent for rapid prototyping and testing sensor configurations without recompilation. Uses the same hardware sensors (PA1010D GPS, ICM20948 IMU) but runs on CircuitPython for easier experimentation.
+
+**Repository:** [OpenPyPony](https://github.com/John-MustangGT/OpenPyPony)
+
+### Mockstang
+OBD-II simulator/fake interface for development and testing without a real vehicle. Emulates Ford Mustang S197 CAN bus messages and standard OBD-II responses, allowing software development and debugging at your desk.
+
+**Repository:** [Mockstang](https://github.com/John-MustangGT/Mockstang)
+
 ## Technical Documentation
 
 For detailed information about the logging system, please refer to:
@@ -149,24 +161,27 @@ Research required - community databases available through:
 
 ## Appendix C: Useful Resources
 
-### Pico Development
-- [Raspberry Pi Pico SDK Documentation](https://raspberrypi.github.io/pico-sdk-doxygen/)
-- [Getting Started with Pico](https://datasheets.raspberrypi.com/pico/getting-started-with-pico.pdf)
-- [RP2350 Datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf)
+### ESP32 Development
+- [ESP32-S3 Technical Reference Manual](https://www.espressif.com/sites/default/files/documentation/esp32-s3_technical_reference_manual_en.pdf)
+- [ESP-IDF Programming Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/)
+- [PlatformIO ESP32 Platform](https://docs.platformio.org/en/latest/platforms/espressif32.html)
+- [Adafruit ESP32-S3 Feather TFT](https://learn.adafruit.com/adafruit-esp32-s3-tft-feather)
 
 ### GPS Modules
-- [NEO-6M Datasheet](https://www.u-blox.com/sites/default/files/products/documents/NEO-6_DataSheet_%28GPS.G6-HW-09005%29.pdf)
+- [PA1010D Datasheet](https://cdn-learn.adafruit.com/assets/assets/000/084/295/original/CD_PA1010D_Datasheet_v.03.pdf)
+- [PA1010D PMTK Command Set](https://cdn-shop.adafruit.com/datasheets/PMTK_A11.pdf)
 - [NMEA 0183 Protocol](https://www.nmea.org/content/STANDARDS/NMEA_0183_Standard)
+- [Adafruit PA1010D Guide](https://learn.adafruit.com/adafruit-mini-gps-pa1010d-module)
+
+### Sensors
+- [ICM20948 Datasheet](https://invensense.tdk.com/wp-content/uploads/2016/06/DS-000189-ICM-20948-v1.3.pdf)
+- [MAX17048 Fuel Gauge Datasheet](https://www.analog.com/media/en/technical-documentation/data-sheets/MAX17048-MAX17049.pdf)
+- [ST7789 Display Controller](https://www.displayfuture.com/Display/datasheet/controller/ST7789.pdf)
 
 ### OBD-II & CAN
 - [OBD-II PIDs Wikipedia](https://en.wikipedia.org/wiki/OBD-II_PIDs)
 - [CAN Bus Tutorial](https://www.csselectronics.com/pages/can-bus-simple-intro-tutorial)
 - [ISO 15765-2 (CAN for Diagnostics)](https://en.wikipedia.org/wiki/ISO_15765-2)
-
-### Web Technologies
-- [Bootstrap 5 Documentation](https://getbootstrap.com/docs/5.0/)
-- [Plotly.js Documentation](https://plotly.com/javascript/)
-- [lwIP TCP/IP Stack](https://www.nongnu.org/lwip/)
 
 ### Ford Mustang Resources
 - [Mustang6G Forums](https://www.mustang6g.com/)
