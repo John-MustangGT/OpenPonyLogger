@@ -2,7 +2,35 @@
 
 ## Project Overview
 
-OpenPonyLogger is an open-source automotive telemetry system designed for track day data logging and analysis. Built on a ESP32-S3 platform, it provides professional-grade data acquisition at a fraction of commercial system costs.
+OpenPonyLogger is an open-source automotive telemetry system designed for track day data logging and analysis. Built on the ESP32-S3 platform, it provides professional-grade data acquisition at a fraction of commercial system costs.
+
+## Features
+
+### Hardware
+- **ESP32-S3 Feather TFT** - Dual-core processor, built-in 1.14" IPS display, USB-C
+- **9-DOF IMU** - ICM20948 (accelerometer, gyroscope, magnetometer)
+- **GPS** - PA1010D with 10Hz update rate
+- **Battery Management** - MAX17048 fuel gauge with charge/discharge monitoring
+- **Storage** - 8MB flash partition for logging (expandable)
+- **Display** - 240×135 ST7789 TFT with NeoPixel status LED
+
+### Capabilities
+- **Real-time logging** - Configurable 5-100Hz sample rates
+- **Dual-core architecture** - Core 0: display/storage, Core 1: sensors
+- **WiFi access point** - Download data via web browser (no internet required)
+- **Power management** - USB power detection with automatic deep sleep (~50µA)
+- **Button control** - Pause/resume, display modes, event markers
+- **Visual feedback** - Color-coded NeoPixel status (GPS fix, paused, shutdown)
+- **Binary format** - Efficient .opl files with session headers
+
+### Data Collection
+- 3-axis acceleration (±16g)
+- 3-axis gyroscope (±2000 dps)
+- 3-axis magnetometer/compass
+- GPS position, altitude, speed, time
+- Battery voltage, current, state-of-charge
+- Configurable units (Imperial/Metric)
+- Event markers for lap timing
 
 ## Safety and Legal Considerations
 
@@ -55,20 +83,24 @@ GitHub: https://github.com/John-MustangGT/OpenPonyLogger
 
 For detailed information about the logging system, please refer to:
 
-- **[Log Format Specification](docs/LOG_FORMAT.md)** - Complete logging format including block headers, session headers, NVS schema, and write/recovery semantics
-- **[Record Schema](docs/RECORD_SCHEMA.md)** - Canonical C struct definitions for all record types (IMU, GPS, CAN, COMPASS)
-- **[Project Checklist](docs/PROJECT_CHECKLIST.md)** - V2 prototype implementation tasks and design decisions
-- Additional references in `docs/`:
-	- [docs/TECHNICAL_IMPLEMENTATION.md](docs/TECHNICAL_IMPLEMENTATION.md)
-	- [docs/RT_LOGGER_ARCHITECTURE.md](docs/RT_LOGGER_ARCHITECTURE.md)
-	- [docs/UNITS_AND_DISPLAY.md](docs/UNITS_AND_DISPLAY.md)
-	- [docs/NEOPIXEL_QUICK_REFERENCE.md](docs/NEOPIXEL_QUICK_REFERENCE.md)
-	- [docs/IMPROVEMENTS_SUMMARY.md](docs/IMPROVEMENTS_SUMMARY.md)
-	- [docs/IMPLEMENTATION_CHECKLIST.md](docs/IMPLEMENTATION_CHECKLIST.md)
-	- [docs/PROJECT_COMPLETION_SUMMARY.md](docs/PROJECT_COMPLETION_SUMMARY.md)
-	- [docs/BEFORE_AND_AFTER.md](docs/BEFORE_AND_AFTER.md)
-	- [docs/VISUAL_SUMMARY.md](docs/VISUAL_SUMMARY.md)
-	- [docs/BUTTON_CONTROL.md](docs/BUTTON_CONTROL.md)
+### Getting Started
+- **[Quick Start Guide](QUICK_START.md)** - Build, upload, and monitor the device
+- **[Display Guide](docs/DISPLAY_GUIDE.md)** - Display layout, units configuration, and NeoPixel status indicators
+- **[Button Control](docs/BUTTON_CONTROL.md)** - Button functions, debouncing, and event marking
+
+### Hardware Reference
+- **[GPIO Pin Mapping](docs/GPIO_PIN_MAPPING.md)** - Complete ESP32-S3 pin allocation and peripheral connections
+- **[Power Management](docs/POWER_MANAGEMENT.md)** - USB power detection, deep sleep, and wake-up behavior
+- **[Bill of Materials](docs/BOM.md)** - Hardware components and specifications
+
+### Software Architecture
+- **[RT Logger Architecture](docs/RT_LOGGER_ARCHITECTURE.md)** - Real-time logger thread design and dual-core architecture
+- **[Design Overview](docs/Design.md)** - Overall system design and component interaction
+
+### Data Format
+- **[Log Format Specification](docs/LOG_FORMAT.md)** - Logging partition structure, block headers, and session management
+- **[OpenPony Binary Format](docs/OPENPONY_BINARY_FORMAT.md)** - .opl file format for data export
+- **[Record Schema](docs/RECORD_SCHEMA.md)** - Binary record structures (IMU, GPS, CAN, COMPASS)
 
 ## Appendix B: Ford Mustang S197 CAN Bus Information
 
@@ -143,6 +175,6 @@ Research required - community databases available through:
 
 ---
 
-**Document Version:** 1.1  
-**Last Updated:** 2026-01-15  
-**Status:** Planning Phase
+**Document Version:** 2.0  
+**Last Updated:** January 19, 2026  
+**Status:** Active Development - V2 Prototype Functional
