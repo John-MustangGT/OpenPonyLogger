@@ -102,6 +102,10 @@ void RTLoggerThread::task_loop() {
     uint32_t last_gps_update = 0;
     uint32_t last_imu_update = 0;
     uint32_t last_obd_update = 0;
+    // Measured update counters for runtime Hz reporting
+    uint32_t gps_updates = 0;
+    uint32_t imu_updates = 0;
+    uint32_t last_stats_ms = 0;
     
     // Debug: Print once at start
     static bool first_run = true;
@@ -122,6 +126,7 @@ void RTLoggerThread::task_loop() {
             m_sensor_manager->update_gps();
             m_last_gps = m_sensor_manager->get_gps();
             last_gps_update = loop_start_ms;
+            gps_updates++;
             any_updated = true;
         }
         
@@ -132,6 +137,7 @@ void RTLoggerThread::task_loop() {
             m_last_gyro = m_sensor_manager->get_gyro();
             m_last_compass = m_sensor_manager->get_comp();
             last_imu_update = loop_start_ms;
+            imu_updates++;
             any_updated = true;
         }
         
@@ -194,6 +200,22 @@ void RTLoggerThread::task_loop() {
                     WiFiManager::broadcast_json(json_buffer);
                 }
             }
+        }
+
+        // Periodically print measured runtime Hz
+        if (last_stats_ms == 0) {
+            last_stats_ms = loop_start_ms;
+        }
+        if ((loop_start_ms - last_stats_ms) >= 2000) { // every 2 seconds
+            float gps_hz = gps_updates / ((loop_start_ms - last_stats_ms) / 1000.0f);
+            float imu_hz = imu_updates / ((loop_start_ms - last_stats_ms) / 1000.0f);
+            float overall_hz = m_sample_count > 0 ? (m_sample_count * 1000.0f) / (loop_start_ms > 0 ? loop_start_ms : 1) : 0.0f;
+            Serial.printf("[RTLogger] Measured Hz -> GPS: %.1f, IMU: %.1f, Overall: %.1f Hz (samples=%u, uptime=%ums)\n",
+                         gps_hz, imu_hz, overall_hz, m_sample_count, loop_start_ms);
+            Serial.flush();
+            gps_updates = 0;
+            imu_updates = 0;
+            last_stats_ms = loop_start_ms;
         }
         
         // Calculate elapsed time and wait only the difference

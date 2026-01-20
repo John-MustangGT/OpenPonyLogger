@@ -2,6 +2,40 @@
 #include <cstring>
 #include <algorithm>
 
+// Forward declaration
+class IcarBleDriver;
+
+// Scan callback implementation
+void OBDScanCallback::onResult(NimBLEAdvertisedDevice* advertisedDevice) {
+    std::string name = advertisedDevice->getName();
+    std::string addr = advertisedDevice->getAddress().toString();
+    
+    Serial.printf("[OBD] Found device: '%s' (%s)\n", name.c_str(), addr.c_str());
+    
+    // Check if device name matches known ELM327 adapters
+    if (name.find("iCar") != std::string::npos ||
+        name.find("vgate") != std::string::npos ||
+        name.find("vlink") != std::string::npos ||
+        name.find("vLink") != std::string::npos ||
+        name.find("VLINK") != std::string::npos ||
+        name.find("OBD") != std::string::npos ||
+        name.find("ELM") != std::string::npos) {
+        
+        Serial.printf("[OBD] ✓ Device found: %s - attempting connection...\n", name.c_str());
+        
+        // Stop scanning before connecting
+        NimBLEDevice::getScan()->stop();
+        
+        // Store device name
+        strncpy(IcarBleDriver::m_device_name, name.c_str(), sizeof(IcarBleDriver::m_device_name) - 1);
+        IcarBleDriver::m_device_name[sizeof(IcarBleDriver::m_device_name) - 1] = '\0';
+        
+        // Attempt connection
+        vTaskDelay(pdMS_TO_TICKS(100));
+        IcarBleDriver::connect(addr.c_str());
+    }
+}
+
 // Static member initialization
 obd_data_t IcarBleDriver::m_data = {};
 bool IcarBleDriver::m_connected = false;
@@ -30,7 +64,7 @@ bool IcarBleDriver::init() {
 }
 
 bool IcarBleDriver::start_scan() {
-    Serial.println("[OBD] Starting BLE scan for iCar device...");
+    Serial.println("[OBD] Starting BLE scan for ELM327-compatible device (iCar/vgate/vlink)...");
     
     NimBLEScan* scan = NimBLEDevice::getScan();
     if (!scan) {
@@ -44,8 +78,12 @@ bool IcarBleDriver::start_scan() {
     scan->setActiveScan(true);
     scan->setDuplicateFilter(true);
     
-    // Start scan and get results
-    scan->start(10, nullptr, false);
+    // Set scan callback to auto-connect when device found
+    static OBDScanCallback callback;
+    scan->setAdvertisedDeviceCallbacks(&callback);
+    
+    // Start scan (0 = scan indefinitely until match found)
+    scan->start(0, nullptr, false);
     
     return true;
 }

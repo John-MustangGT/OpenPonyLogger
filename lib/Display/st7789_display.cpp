@@ -113,7 +113,7 @@ void ST7789Display::update(uint32_t uptime_ms,
                           float accel_x, float accel_y, float accel_z,
                           float gyro_x, float gyro_y, float gyro_z,
                           float battery_soc, float battery_voltage,
-                          bool gps_valid, uint32_t sample_count,
+                          bool gps_valid, uint32_t sample_count, float sample_hz,
                           bool is_paused,
                           double gps_latitude,
                           double gps_longitude,
@@ -227,6 +227,16 @@ void ST7789Display::update(uint32_t uptime_ms,
     } else {
         DisplayLabel::draw(m_tft, "--:--:--", 75, bar_y + 1, ST77XX_YELLOW, ST77XX_BLACK, 1);
     }
+
+    // Sampling Hz on far right (clamped to avoid NaN/inf)
+    if (!isfinite(sample_hz) || sample_hz < 0.0f) {
+        sample_hz = 0.0f;
+    } else if (sample_hz > 999.9f) {
+        sample_hz = 999.9f;
+    }
+    char hz_str[12];
+    snprintf(hz_str, sizeof(hz_str), "%.1fHz", sample_hz);
+    DisplayLabel::draw(m_tft, hz_str, 160, bar_y + 1, ST77XX_WHITE, ST77XX_BLACK, 1);
 }
 
 void ST7789Display::cycle_display_mode() {

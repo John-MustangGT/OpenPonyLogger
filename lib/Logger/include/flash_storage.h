@@ -8,6 +8,9 @@
 #include "session_header.h"
 #include "log_block.h"
 
+// Forward declaration
+class RTCManager;
+
 /**
  * @brief Flash storage writer for circular buffer logging
  * 
@@ -25,12 +28,14 @@ public:
      * 
      * - Finds storage partition
      * - Loads write offset from NVS
+     * - Restores system time from RTC or NVS
      * - Creates session header
      * - Starts writer task on Core 0
      * 
+     * @param rtc_manager Optional RTCManager for time recovery
      * @return true if initialization successful
      */
-    bool begin();
+    bool begin(RTCManager* rtc_manager = nullptr);
     
     /**
      * @brief Stop storage and cleanup

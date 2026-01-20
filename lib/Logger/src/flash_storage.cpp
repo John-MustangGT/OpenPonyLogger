@@ -1,4 +1,5 @@
 #include "flash_storage.h"
+#include "rtc_manager.h"
 #include <esp_crc.h>
 #include <esp_random.h>
 #include <esp_mac.h>
@@ -19,8 +20,13 @@ FlashStorage::~FlashStorage() {
     end();
 }
 
-bool FlashStorage::begin() {
+bool FlashStorage::begin(RTCManager* rtc_manager) {
     Serial.println("[FlashStorage] Initializing...");
+    
+    // Restore system time from RTC or NVS if available
+    if (rtc_manager != nullptr) {
+        rtc_manager->restore_system_time_on_boot();
+    }
     
     // Find storage partition
     m_partition = esp_partition_find_first(
@@ -69,6 +75,7 @@ bool FlashStorage::begin() {
     m_session_header.magic = SESSION_START_MAGIC;
     m_session_header.version = 0x01;
     m_session_header.compression_type = COMPRESSION_NONE;  // No compression for now
+    m_session_header.rtc_available = (rtc_manager != nullptr) ? rtc_manager->is_available() : 0;
     memcpy(m_session_header.startup_id, m_startup_id, 16);
     m_session_header.esp_time_at_start = esp_timer_get_time();
     m_session_header.gps_utc_at_lock = 0;  // Will be updated when GPS locks
@@ -93,6 +100,7 @@ bool FlashStorage::begin() {
         if (i == 3 || i == 5 || i == 7 || i == 9) Serial.print("-");
     }
     Serial.println();
+    Serial.printf("[FlashStorage] RTC available: %d\n", m_session_header.rtc_available);
     
     // Write session header to flash
     write_session_header();

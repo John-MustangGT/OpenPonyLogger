@@ -4,6 +4,8 @@
 #include "sensor_hal.h"
 #include <HardwareSerial.h>
 #include <Wire.h>
+#include <functional>
+#include <ctime>
 
 /**
  * @brief PA1010D GPS Module Driver
@@ -19,6 +21,13 @@ public:
         UART,  // Serial/UART interface
         I2C    // I2C interface (default)
     };
+
+    /**
+     * @brief Callback type for GPS time lock notifications
+     * Called when valid GPRMC sentence received with time
+     * Parameter: Unix timestamp (time_t) from GPS
+     */
+    using GPSTimeLockCallback = std::function<void(time_t)>;
 
     /**
      * @brief Constructor for I2C communication (default)
@@ -43,6 +52,14 @@ public:
     bool update() override;
     gps_data_t get_data() const override;
     bool is_valid() const override;
+    
+    /**
+     * @brief Set callback for GPS time lock notifications
+     * @param callback Function to call when valid GPS time available
+     */
+    void set_time_lock_callback(GPSTimeLockCallback callback) {
+        m_time_lock_callback = callback;
+    }
 
 private:
     // Communication mode
@@ -61,6 +78,10 @@ private:
     // Common data
     gps_data_t m_data;
     bool m_valid;
+    
+    // GPS time lock callback
+    GPSTimeLockCallback m_time_lock_callback;
+    time_t m_last_gps_timestamp;
     
     // Helper functions
     bool parse_nmea_sentence(const char* sentence);

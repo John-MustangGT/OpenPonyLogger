@@ -16,6 +16,14 @@ struct obd_pid_config_t {
 };
 
 /**
+ * @brief BLE scan callback for auto-connecting to ELM327 devices
+ */
+class OBDScanCallback : public NimBLEAdvertisedDeviceCallbacks {
+public:
+    void onResult(NimBLEAdvertisedDevice* advertisedDevice);
+};
+
+/**
  * @brief vgate iCar 2 Pro BLE Central interface
  * Connects to the BLE OBD-II scanner and reads OBD parameters
  * 
@@ -36,6 +44,9 @@ struct obd_pid_config_t {
  * - Requires 500ms+ between writes for reliable communication
  */
 class IcarBleDriver {
+    // Allow OBDScanCallback to access private members
+    friend class OBDScanCallback;
+    
 public:
     /**
      * @brief Initialize the BLE central interface

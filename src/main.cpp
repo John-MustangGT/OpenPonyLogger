@@ -8,6 +8,8 @@
 #include "max17048_driver.h"
 #include "icar_ble_driver.h"
 #include "icar_ble_wrapper.h"
+#include "rtc_manager.h"
+#include "time_update_task.h"
 #include "rt_logger_thread.h"
 #include "flash_storage.h"
 #include "storage_reporter.h"
@@ -48,6 +50,8 @@ RTLoggerThread* rt_logger = nullptr;
 StatusMonitor* status_monitor = nullptr;
 StorageReporter reporter;
 FlashStorage* flash_storage = nullptr;  // Flash partition writer (Core 0)
+RTCManager* rtc_manager = nullptr;      // Real-time clock manager
+TimeUpdateTask* time_updater = nullptr; // Low-priority GPS time sync task
 
 // PA1010D GPS driver instance
 PA1010DDriver* gps_driver = nullptr;
@@ -354,11 +358,44 @@ void setup() {
     }
     // Normal boot - logging starts automatically
     
+    // Initialize RTC manager (PCF8523 on Adalogger FeatherWing)
+    Serial.println("\n▶ Initializing Real-Time Clock Manager...");
+    Serial.flush();
+    rtc_manager = new RTCManager();
+    if (rtc_manager->init(Wire)) {
+        Serial.println("✓ PCF8523 RTC detected and initialized");
+    } else {
+        Serial.println("⚠ WARNING: PCF8523 RTC not detected, will use NVS-stored GPS time");
+    }
+    Serial.flush();
+    
+    // Initialize low-priority time update task
+    Serial.println("▶ Starting Time Update Task (priority 1)...");
+    Serial.flush();
+    time_updater = new TimeUpdateTask(*rtc_manager);
+    if (time_updater->start()) {
+        Serial.println("✓ Time Update Task started");
+    } else {
+        Serial.println("✗ WARNING: Failed to start Time Update Task");
+    }
+    Serial.flush();
+    
+    // Wire GPS time lock callback to time updater
+    if (gps_driver != nullptr && time_updater != nullptr) {
+        gps_driver->set_time_lock_callback([](time_t gps_time) {
+            if (time_updater != nullptr) {
+                time_updater->notify_gps_time_available(gps_time);
+            }
+        });
+        Serial.println("✓ GPS time lock callback wired to TimeUpdateTask");
+        Serial.flush();
+    }
+    
     // Initialize flash storage (Core 0 writer task)
-    Serial.println("\n[8/9] Initializing Flash Storage...");
+    Serial.println("\n▶ Initializing Flash Storage...");
     Serial.flush();
     flash_storage = new FlashStorage();
-    if (!flash_storage->begin()) {
+    if (!flash_storage->begin(rtc_manager)) {
         Serial.println("✗ ERROR: Failed to initialize flash storage");
         Serial.println("System halted.");
         while (1) { delay(1000); }
@@ -383,7 +420,7 @@ void setup() {
     // Create and start status monitor on core 0
     Serial.println("  → Creating StatusMonitor object...");
     Serial.flush();
-    status_monitor = new StatusMonitor(rt_logger, 1000);  // Report every 1 second for debugging
+    status_monitor = new StatusMonitor(rt_logger, 5000);  // Report every 5 seconds to reduce Core 0 contention
     Serial.println("  ✓ StatusMonitor object created");
     Serial.flush();
     

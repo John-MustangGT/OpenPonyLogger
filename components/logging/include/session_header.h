@@ -19,7 +19,8 @@ typedef struct __attribute__((packed)) {
     uint32_t magic;             // SESSION_START_MAGIC
     uint8_t  version;           // format version
     uint8_t  compression_type;  // Compression type used (compression_type_t)
-    uint8_t  reserved[2];
+    uint8_t  rtc_available;     // 1 if PCF8523 RTC was available at boot, 0 otherwise
+    uint8_t  reserved[1];
     uint8_t  startup_id[16];    // UUIDv4 for this session
     int64_t  esp_time_at_start; // esp_timer_get_time() at startup (µs)
     int64_t  gps_utc_at_lock;   // seconds since epoch (0 if unknown)

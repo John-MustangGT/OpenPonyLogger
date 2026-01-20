@@ -54,7 +54,8 @@ public:
      * @param battery_soc Battery state of charge (0-100%)
      * @param battery_voltage Battery voltage in V
      * @param gps_valid GPS has valid fix
-     * @param sample_count Number of samples logged
+    * @param sample_count Number of samples logged
+    * @param sample_hz Sampling frequency (Hz)
      * @param is_paused Whether logging is paused
      * @param gps_latitude Latitude in decimal degrees (if valid)
      * @param gps_longitude Longitude in decimal degrees (if valid)
@@ -69,7 +70,7 @@ public:
                       float accel_x, float accel_y, float accel_z,
                       float gyro_x, float gyro_y, float gyro_z,
                       float battery_soc, float battery_voltage,
-                      bool gps_valid, uint32_t sample_count,
+                      bool gps_valid, uint32_t sample_count, float sample_hz,
                       bool is_paused = false,
                       double gps_latitude = 0.0,
                       double gps_longitude = 0.0,

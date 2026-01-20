@@ -1,6 +1,7 @@
 #include "pa1010d_driver.h"
 #include <cstring>
 #include <cstdlib>
+#include <ctime>
 
 /**
  * @brief I2C Constructor (default)
@@ -8,7 +9,8 @@
 PA1010DDriver::PA1010DDriver(TwoWire& wire, uint8_t i2c_addr)
     : m_comm_mode(CommInterface::I2C),
       m_serial(nullptr), m_tx_pin(0), m_rx_pin(0), m_baud(0),
-      m_wire(&wire), m_i2c_addr(i2c_addr), m_valid(false) {
+      m_wire(&wire), m_i2c_addr(i2c_addr), m_valid(false),
+      m_time_lock_callback(nullptr), m_last_gps_timestamp(0) {
     memset(&m_data, 0, sizeof(m_data));
 }
 
@@ -18,7 +20,8 @@ PA1010DDriver::PA1010DDriver(TwoWire& wire, uint8_t i2c_addr)
 PA1010DDriver::PA1010DDriver(HardwareSerial& serial, int tx_pin, int rx_pin, unsigned long baud)
     : m_comm_mode(CommInterface::UART),
       m_serial(&serial), m_tx_pin(tx_pin), m_rx_pin(rx_pin), m_baud(baud),
-      m_wire(nullptr), m_i2c_addr(0), m_valid(false) {
+      m_wire(nullptr), m_i2c_addr(0), m_valid(false),
+      m_time_lock_callback(nullptr), m_last_gps_timestamp(0) {
     memset(&m_data, 0, sizeof(m_data));
 }
 
@@ -168,6 +171,28 @@ bool PA1010DDriver::parse_gprmc(const char* sentence) {
     m_data.speed = tmp_speed;
     m_valid = (status == 'A');
     m_data.valid = m_valid;  // Update the struct field too
+    
+    // If GPS time is now valid, notify any callbacks
+    if (m_valid && m_time_lock_callback) {
+        // Convert GPS time to Unix timestamp
+        // GPS year is 2-digit, hour/minute/second are provided
+        struct tm gps_time;
+        gps_time.tm_year = m_data.year - 1900;
+        gps_time.tm_mon = m_data.month - 1;
+        gps_time.tm_mday = m_data.day;
+        gps_time.tm_hour = m_data.hour;
+        gps_time.tm_min = m_data.minute;
+        gps_time.tm_sec = m_data.second;
+        gps_time.tm_isdst = -1;
+        
+        time_t gps_timestamp = mktime(&gps_time);
+        
+        // Only notify if timestamp changed (avoid duplicate callbacks for same time)
+        if (gps_timestamp != m_last_gps_timestamp) {
+            m_last_gps_timestamp = gps_timestamp;
+            m_time_lock_callback(gps_timestamp);
+        }
+    }
     
     // Debug: Print parsing result
     static uint32_t last_parse_debug = 0;

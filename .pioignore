@@ -1,0 +1,3 @@
+# Ignore Python tools folder from PlatformIO processing
+/tools/
+/tools/**

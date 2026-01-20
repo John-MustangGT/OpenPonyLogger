@@ -54,7 +54,7 @@ bool StatusMonitor::start() {
     BaseType_t result = xTaskCreatePinnedToCore(
         StatusMonitor::task_wrapper,
         "StatusMonitor",
-        4096,
+        6144,
         this,
         1,  // Priority
         &m_task_handle,
@@ -130,15 +130,20 @@ void StatusMonitor::print_status_now() {
         Serial.println(buffer);
         Serial.println("║");
         
+        float sample_hz = sample_count > 0 && uptime_sec > 0 ? (float)sample_count / uptime_sec : 0.0f;
+        if (!isfinite(sample_hz) || sample_hz < 0.0f) {
+            sample_hz = 0.0f;
+        }
         // Sample count
         snprintf(buffer, sizeof(buffer), "║ Samples logged: %u (%.1f samples/sec)",
-                 sample_count, sample_count > 0 ? (float)sample_count / (uptime_sec > 0 ? uptime_sec : 1) : 0.0f);
+             sample_count, sample_hz);
         Serial.println(buffer);
         
         // Update display based on current mode
         DisplayMode current_mode = ST7789Display::get_display_mode();
         bool is_paused = m_rt_logger->is_storage_paused();
         
+        uint32_t display_start = millis();
         if (current_mode == DisplayMode::MAIN_SCREEN) {
             // Show sensor data
             ST7789Display::update(
@@ -147,7 +152,7 @@ void StatusMonitor::print_status_now() {
                 accel.x, accel.y, accel.z,
                 gyro.x, gyro.y, gyro.z,
                 battery.state_of_charge, battery.voltage,
-                gps.valid, sample_count,
+                gps.valid, sample_count, sample_hz,
                 is_paused,
                 gps.latitude, gps.longitude, gps.altitude,
                 gps.hour, gps.minute, gps.second,
@@ -156,6 +161,10 @@ void StatusMonitor::print_status_now() {
         } else if (current_mode == DisplayMode::INFO_SCREEN) {
             // Show IP/BLE information
             ST7789Display::show_info_screen("192.168.1.1", "OpenPonyLogger");
+        }
+        uint32_t display_elapsed = millis() - display_start;
+        if (display_elapsed > 10) {
+            Serial.printf("[StatusMonitor] ⚠️ Display update took %ums (blocking Core 0!)\n", display_elapsed);
         }
         // DisplayMode::DARK - do nothing, display is off
         
@@ -195,7 +204,14 @@ void StatusMonitor::task_loop() {
     bool d1_pressed = false;
     bool d2_pressed = false;
     
+    uint32_t loop_count = 0;
+    uint32_t broadcast_count = 0;
+    uint32_t yield_count = 0;
+    
+    Serial.println("[StatusMonitor] Task loop started on Core 0");
+    
     while (m_running) {
+        loop_count++;
         uint32_t now = millis();
         
         // ===== Handle D0 Button (Pause/Resume) =====
@@ -323,6 +339,10 @@ void StatusMonitor::task_loop() {
             }
         }
         
+        // Yield to watchdog to prevent TWDT reset on Core 0
+        vTaskDelay(pdMS_TO_TICKS(1));
+        yield_count++;
+        
         // Broadcast sensor data via WebSocket at 2Hz (every 500ms)
         // Only when clients are connected to minimize overhead
         static uint32_t last_ws_broadcast_ms = 0;
@@ -338,6 +358,7 @@ void StatusMonitor::task_loop() {
         if (WiFiManager::is_initialized() && WiFiManager::has_clients() && 
             (now - last_ws_broadcast_ms) >= 500) {
             last_ws_broadcast_ms = now;
+            broadcast_count++;
             
             if (m_rt_logger != nullptr) {
                 // Get latest sensor data
@@ -347,6 +368,9 @@ void StatusMonitor::task_loop() {
                 battery_data_t battery = m_rt_logger->get_last_battery();
                 uint32_t sample_count = m_rt_logger->get_sample_count();
                 bool is_paused = m_rt_logger->is_storage_paused();
+                
+                Serial.printf("[StatusMonitor] Broadcast #%u: JSON encoding + WebSocket send (clients=%d, obd_enabled=%d)\n", 
+                    broadcast_count, WiFiManager::get_client_count(), obd_ble_enabled);
                 
                 // Create JSON document with sensor data
                 JsonDocument doc;
@@ -381,31 +405,27 @@ void StatusMonitor::task_loop() {
                 doc["battery_temp"] = battery.temperature / 100.0f;
                 
                 // OBD data (if connected and enabled)
+                // NOTE: Skip OBD data fetch during JSON broadcast to avoid Core 0 watchdog starvation.
+                // BLE I/O is blocking and can prevent idle task from running. OBD data is available
+                // through sensor_manager callback during storage writes; WebSocket clients can check
+                // is_connected() flag without fetching full data every 5s.
                 bool obd_available = false;
                 if (obd_ble_enabled) {
                     try {
                         obd_available = IcarBleDriver::is_connected();
+                        Serial.printf("[StatusMonitor] OBD status check: connected=%d\n", obd_available);
                     } catch (...) {
                         obd_available = false;
+                        Serial.println("[StatusMonitor] OBD status check FAILED (exception)");
                     }
+                } else {
+                    Serial.println("[StatusMonitor] OBD disabled - skipping BLE check");
                 }
                 
-                if (obd_available) {
-                    try {
-                        obd_data_t obd = IcarBleDriver::get_data();
-                        JsonObject obd_obj = doc["obd"].to<JsonObject>();
-                        obd_obj["connected"] = true;
-                        obd_obj["rpm"] = obd.engine_rpm;
-                        obd_obj["speed"] = obd.vehicle_speed;
-                        obd_obj["throttle"] = obd.throttle_position;
-                        obd_obj["load"] = obd.engine_load;
-                        obd_obj["coolant_temp"] = obd.coolant_temp;
-                        obd_obj["intake_temp"] = obd.intake_temp;
-                        obd_obj["maf"] = obd.maf_flow;
-                        obd_obj["timing_advance"] = obd.timing_advance;
-                    } catch (...) {
-                        doc["obd"]["connected"] = false;
-                    }
+                // Only include minimal OBD status (connected flag) to avoid BLE I/O during broadcast
+                if (obd_ble_enabled) {
+                    doc["obd"]["connected"] = obd_available;
+                    // Full OBD data (rpm, speed, etc.) is populated during storage writes in on_storage_write()
                 } else {
                     doc["obd"]["connected"] = false;
                 }
@@ -415,12 +435,16 @@ void StatusMonitor::task_loop() {
                 size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
                 if (n > 0 && n < sizeof(json_buffer)) {
                     WiFiManager::broadcast_json(json_buffer);
+                    // Yield after broadcast to feed watchdog during potential WebSocket I/O
+                    vTaskDelay(pdMS_TO_TICKS(1));
                 }
             }
         }
         
         // Print status at regular intervals
         if (now - m_last_report_time >= m_report_interval_ms) {
+            Serial.printf("[StatusMonitor] STATUS REPORT #%u (loops=%u, broadcasts=%u, yields=%u)\n",
+                m_write_count, loop_count, broadcast_count, yield_count);
             print_status_now();
             m_last_report_time = now;
         }
