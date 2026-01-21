@@ -16,6 +16,16 @@ struct obd_pid_config_t {
 };
 
 /**
+ * @brief Recently seen BLE device record
+ */
+struct recent_ble_device_t {
+    char name[64];                // Device name
+    char address[18];             // BLE address (AA:BB:CC:DD:EE:FF)
+    int rssi;                     // Signal strength
+    uint32_t last_seen_ms;        // Last time this device was seen
+};
+
+/**
  * @brief BLE scan callback for auto-connecting to ELM327 devices
  */
 class OBDScanCallback : public NimBLEAdvertisedDeviceCallbacks {
@@ -28,7 +38,7 @@ public:
  * Connects to the BLE OBD-II scanner and reads OBD parameters
  * 
  * Device Information:
- * - Device Name: "vgate iCar2Pro" or similar (searches for "iCar" or "vgate")
+ * - Device Names: "vgate iCar2Pro", "IOS-Vlink" or similar (searches for "iCar", "vgate", "IOS-Vlink", etc.)
  * - Typical MAC: AA:BB:CC:DD:EE:FF (random)
  * - BLE Standard: BLE 4.0/4.1
  * 
@@ -38,7 +48,7 @@ public:
  * - TX Char: 0xFFE2 (write to device)
  * 
  * Connection Notes:
- * - Device advertises with local name containing "iCar" or "vgate"
+ * - Device advertises with local name containing "iCar", "vgate", "IOS-Vlink", or other ELM327-compatible patterns
  * - No authentication required (open connection)
  * - Connection is stable at 1-2 MTU (default 23 bytes)
  * - Requires 500ms+ between writes for reliable communication
@@ -128,6 +138,27 @@ public:
     static bool request_pid(uint8_t pid);
 
     /**
+     * @brief Check if a connection attempt is pending (set by scan callback)
+     */
+    static bool has_pending_connection();
+
+    /**
+     * @brief Age of the pending connection flag in milliseconds (0 if none)
+     */
+    static uint32_t pending_connection_age_ms();
+
+    /**
+     * @brief Get recently seen BLE devices (for debugging)
+     * @return Vector of recent BLE devices (last 30 seconds)
+     */
+    static const std::vector<recent_ble_device_t>& get_recent_devices();
+
+    /**
+     * @brief Clear recent BLE device history
+     */
+    static void clear_recent_devices();
+
+    /**
      * @brief Get device address (for remembering last connection)
      */
     static const char* get_device_address();
@@ -170,6 +201,7 @@ private:
     static NimBLERemoteCharacteristic* m_rx_char;
     static NimBLERemoteCharacteristic* m_tx_char;
     static std::vector<obd_pid_config_t> m_configured_pids;
+    static std::vector<recent_ble_device_t> m_recent_devices;
     
     /**
      * @brief Send OBD command and wait for response

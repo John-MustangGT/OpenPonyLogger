@@ -3,6 +3,7 @@
 #include "wifi_manager.h"
 #include "config_manager.h"
 #include "icar_ble_driver.h"
+#include "debug_flags.h"
 #include <Arduino.h>
 #include <cstdio>
 #include <esp_log.h>
@@ -139,46 +140,36 @@ void StatusMonitor::print_status_now() {
              sample_count, sample_hz);
         Serial.println(buffer);
         
-        // Update display based on current mode
-        DisplayMode current_mode = ST7789Display::get_display_mode();
-        bool is_paused = m_rt_logger->is_storage_paused();
-        
-        uint32_t display_start = millis();
-        if (current_mode == DisplayMode::MAIN_SCREEN) {
-            // Show sensor data
-            ST7789Display::update(
-                uptime_ms,
-                accel.temperature,
-                accel.x, accel.y, accel.z,
-                gyro.x, gyro.y, gyro.z,
-                battery.state_of_charge, battery.voltage,
-                gps.valid, sample_count, sample_hz,
-                is_paused,
-                gps.latitude, gps.longitude, gps.altitude,
-                gps.hour, gps.minute, gps.second,
-                gps.speed
-            );
-        } else if (current_mode == DisplayMode::INFO_SCREEN) {
-            // Show IP/BLE information
-            ST7789Display::show_info_screen("192.168.1.1", "OpenPonyLogger");
+        // OBD BLE status
+        bool obd_connected = IcarBleDriver::is_connected();
+        const char* obd_device = IcarBleDriver::get_device_name();
+        snprintf(buffer, sizeof(buffer), "║ OBD status check: connected=%d", obd_connected);
+        Serial.println(buffer);
+        if (obd_connected && obd_device[0] != '\0') {
+            snprintf(buffer, sizeof(buffer), "║ OBD device: %s", obd_device);
+            Serial.println(buffer);
         }
-        uint32_t display_elapsed = millis() - display_start;
-        if (display_elapsed > 10) {
-            Serial.printf("[StatusMonitor] ⚠️ Display update took %ums (blocking Core 0!)\n", display_elapsed);
-        }
-        // DisplayMode::DARK - do nothing, display is off
         
-        // Update NeoPixel state based on pause and GPS status
-        if (is_paused) {
-            // When paused, show slow flash regardless of GPS state
-            NeoPixelStatus::setState(NeoPixelStatus::State::PAUSED);
-        } else if (gps.valid) {
-            // Normal operation with GPS lock
-            NeoPixelStatus::setState(NeoPixelStatus::State::GPS_3D_FIX);
+        // Show recently seen BLE devices
+        const auto& recent_devices = IcarBleDriver::get_recent_devices();
+        if (!recent_devices.empty()) {
+            snprintf(buffer, sizeof(buffer), "║ Recent BLE devices (%zu seen):", recent_devices.size());
+            Serial.println(buffer);
+            for (const auto& dev : recent_devices) {
+                snprintf(buffer, sizeof(buffer), "║   '%s' (%s) RSSI=%d", 
+                         dev.name, dev.address, dev.rssi);
+                Serial.println(buffer);
+            }
         } else {
-            // Normal operation, searching for GPS
-            NeoPixelStatus::setState(NeoPixelStatus::State::NO_GPS_FIX);
+            const bool pending = IcarBleDriver::has_pending_connection();
+            const uint32_t pending_age = IcarBleDriver::pending_connection_age_ms();
+            snprintf(buffer, sizeof(buffer), "║ Recent BLE devices: none in last 30s (pending_conn=%d, age=%ums)",
+                     pending ? 1 : 0, pending_age);
+            Serial.println(buffer);
         }
+        
+        // NeoPixel state updated in main task loop (not here)
+        // Display update moved to main task loop
     }
     
     Serial.println("╚═══════════════════════════════════════════════════════════╝");
@@ -287,7 +278,27 @@ void StatusMonitor::task_loop() {
         d2_last_state = d2_state;
         
         // ===== USB Power Monitoring =====
-        bool usb_present = (digitalRead(VBUS_DETECT_PIN) == HIGH);
+        // Dual detection method: GPIO19 + battery voltage
+        // GPIO19 should read HIGH when USB connected, but may be unreliable
+        // Battery voltage >4.05V usually indicates charging (USB present)
+        bool gpio_usb = (digitalRead(VBUS_DETECT_PIN) == HIGH);
+        
+        // Get battery voltage for secondary detection
+        battery_data_t battery_data = m_rt_logger ? m_rt_logger->get_last_battery() : battery_data_t{};
+        float battery_voltage = battery_data.voltage;
+        bool voltage_usb = (battery_voltage > 4.05f);  // Charging voltage threshold
+        
+        // Use OR logic: if either method detects USB, consider it present
+        // This makes detection more robust
+        bool usb_present = gpio_usb || voltage_usb;
+        
+        // Debug: Print USB detection status every 10 seconds
+        static uint32_t last_debug_time = 0;
+        if (DebugFlags::ENABLE_POWER_DEBUG && now - last_debug_time >= 10000) {
+            Serial.printf("[Power DEBUG] GPIO19=%d, BattV=%.2fV, gpio_usb=%d, voltage_usb=%d, final_usb=%d, shutdown=%d\n",
+                         digitalRead(VBUS_DETECT_PIN), battery_voltage, gpio_usb, voltage_usb, usb_present, m_shutdown_pending);
+            last_debug_time = now;
+        }
         
         if (!m_shutdown_pending) {
             if (usb_present && !m_usb_powered) {
@@ -338,6 +349,13 @@ void StatusMonitor::task_loop() {
                 }
             }
         }
+
+        // Drive BLE scanning/connection from Core 0 to avoid NimBLE crashes on other cores
+        static uint32_t last_obd_update = 0;
+        if (now - last_obd_update >= 200) { // 5 Hz on Core 0
+            IcarBleDriver::update();
+            last_obd_update = now;
+        }
         
         // Yield to watchdog to prevent TWDT reset on Core 0
         vTaskDelay(pdMS_TO_TICKS(1));
@@ -369,8 +387,10 @@ void StatusMonitor::task_loop() {
                 uint32_t sample_count = m_rt_logger->get_sample_count();
                 bool is_paused = m_rt_logger->is_storage_paused();
                 
-                Serial.printf("[StatusMonitor] Broadcast #%u: JSON encoding + WebSocket send (clients=%d, obd_enabled=%d)\n", 
-                    broadcast_count, WiFiManager::get_client_count(), obd_ble_enabled);
+                if (DebugFlags::ENABLE_WEBSOCKET_DEBUG) {
+                    Serial.printf("[StatusMonitor] Broadcast #%u: JSON encoding + WebSocket send (clients=%d, obd_enabled=%d)\n", 
+                        broadcast_count, WiFiManager::get_client_count(), obd_ble_enabled);
+                }
                 
                 // Create JSON document with sensor data
                 JsonDocument doc;
@@ -413,21 +433,38 @@ void StatusMonitor::task_loop() {
                 if (obd_ble_enabled) {
                     try {
                         obd_available = IcarBleDriver::is_connected();
-                        Serial.printf("[StatusMonitor] OBD status check: connected=%d\n", obd_available);
+                        if (DebugFlags::ENABLE_OBD_DEBUG) {
+                            Serial.printf("[StatusMonitor] OBD status check: connected=%d\n", obd_available);
+                        }
                     } catch (...) {
                         obd_available = false;
-                        Serial.println("[StatusMonitor] OBD status check FAILED (exception)");
+                        if (DebugFlags::ENABLE_OBD_DEBUG) {
+                            Serial.println("[StatusMonitor] OBD status check FAILED (exception)");
+                        }
                     }
-                } else {
-                    Serial.println("[StatusMonitor] OBD disabled - skipping BLE check");
                 }
                 
-                // Only include minimal OBD status (connected flag) to avoid BLE I/O during broadcast
-                if (obd_ble_enabled) {
-                    doc["obd"]["connected"] = obd_available;
-                    // Full OBD data (rpm, speed, etc.) is populated during storage writes in on_storage_write()
+                // Initialize OBD object in JSON (always present, even if not connected)
+                JsonObject obd_obj = doc["obd"].to<JsonObject>();
+                
+                // Include OBD status and PIDs if connected
+                if (obd_ble_enabled && obd_available) {
+                    obd_obj["connected"] = true;
+                    obd_data_t obd = m_rt_logger->get_sensor_manager()->get_obd();
+                    obd_obj["rpm"] = obd.engine_rpm;
+                    obd_obj["speed_kph"] = obd.vehicle_speed;
+                    obd_obj["coolant_temp"] = obd.coolant_temp;
+                    obd_obj["throttle_pos"] = obd.throttle_position;
+                    obd_obj["engine_load"] = obd.engine_load;
+                    obd_obj["intake_temp"] = obd.intake_temp;
                 } else {
-                    doc["obd"]["connected"] = false;
+                    obd_obj["connected"] = false;
+                    obd_obj["rpm"] = nullptr;
+                    obd_obj["speed_kph"] = nullptr;
+                    obd_obj["coolant_temp"] = nullptr;
+                    obd_obj["throttle_pos"] = nullptr;
+                    obd_obj["engine_load"] = nullptr;
+                    obd_obj["intake_temp"] = nullptr;
                 }
                 
                 // Serialize and broadcast
@@ -441,12 +478,88 @@ void StatusMonitor::task_loop() {
             }
         }
         
+        // Update display every 2 seconds (independent of debug flags)
+        static uint32_t last_display_update = 0;
+        if (m_rt_logger != nullptr && now - last_display_update >= 2000) {
+            DisplayMode current_mode = ST7789Display::get_display_mode();
+            bool is_paused = m_rt_logger->is_storage_paused();
+            
+            if (current_mode == DisplayMode::MAIN_SCREEN) {
+                // Get latest sensor data for display
+                gps_data_t gps = m_rt_logger->get_last_gps();
+                accel_data_t accel = m_rt_logger->get_last_accel();
+                gyro_data_t gyro = m_rt_logger->get_last_gyro();
+                battery_data_t battery = m_rt_logger->get_last_battery();
+                uint32_t sample_count = m_rt_logger->get_sample_count();
+                uint32_t uptime_sec = now / 1000;
+                float sample_hz = sample_count > 0 && uptime_sec > 0 ? (float)sample_count / uptime_sec : 0.0f;
+                if (!isfinite(sample_hz) || sample_hz < 0.0f) sample_hz = 0.0f;
+                
+                uint32_t display_start = millis();
+                ST7789Display::update(
+                    now,
+                    accel.temperature,
+                    accel.x, accel.y, accel.z,
+                    gyro.x, gyro.y, gyro.z,
+                    battery.state_of_charge, battery.voltage,
+                    gps.valid, sample_count, sample_hz,
+                    is_paused,
+                    gps.latitude, gps.longitude, gps.altitude,
+                    gps.hour, gps.minute, gps.second,
+                    gps.speed
+                );
+                
+                if (DebugFlags::ENABLE_DISPLAY_TIMING) {
+                    uint32_t display_elapsed = millis() - display_start;
+                    if (display_elapsed > 10) {
+                        Serial.printf("[Display] Update took %ums\n", display_elapsed);
+                    }
+                }
+            } else if (current_mode == DisplayMode::INFO_SCREEN) {
+                ST7789Display::show_info_screen("192.168.4.1", "OpenPonyLogger");
+            }
+            // DisplayMode::DARK - do nothing
+            
+            last_display_update = now;
+        }
+        
         // Print status at regular intervals
         if (now - m_last_report_time >= m_report_interval_ms) {
-            Serial.printf("[StatusMonitor] STATUS REPORT #%u (loops=%u, broadcasts=%u, yields=%u)\n",
-                m_write_count, loop_count, broadcast_count, yield_count);
-            print_status_now();
+            // Show sensor sample counts at 1Hz
+            if (DebugFlags::ENABLE_SAMPLE_COUNTS && m_rt_logger != nullptr) {
+                uint32_t gps_samples = m_rt_logger->get_gps_sample_count();
+                uint32_t accel_samples = m_rt_logger->get_accel_sample_count();
+                uint32_t gyro_samples = m_rt_logger->get_gyro_sample_count();
+                uint32_t obd_samples = m_rt_logger->get_obd_sample_count();
+                bool is_paused = m_rt_logger->is_storage_paused();
+                Serial.printf("[1Hz] GPS:%u IMU:%u Gyro:%u OBD:%u | Paused:%d | Heap:%u\n",
+                    gps_samples, accel_samples, gyro_samples, obd_samples, is_paused, ESP.getFreeHeap());
+            }
+            
+            // Full status report if enabled
+            if (DebugFlags::ENABLE_STATUS_REPORT) {
+                Serial.printf("[StatusMonitor] STATUS REPORT #%u (loops=%u, broadcasts=%u, yields=%u)\n",
+                    m_write_count, loop_count, broadcast_count, yield_count);
+                print_status_now();
+            }
             m_last_report_time = now;
+        }
+        
+        // Update NeoPixel state based on pause and GPS status
+        if (m_rt_logger != nullptr) {
+            bool is_paused = m_rt_logger->is_storage_paused();
+            gps_data_t gps = m_rt_logger->get_last_gps();
+            
+            if (is_paused) {
+                // When paused, show slow flash regardless of GPS state
+                NeoPixelStatus::setState(NeoPixelStatus::State::PAUSED);
+            } else if (gps.valid) {
+                // Normal operation with GPS lock
+                NeoPixelStatus::setState(NeoPixelStatus::State::GPS_3D_FIX);
+            } else {
+                // Normal operation, searching for GPS
+                NeoPixelStatus::setState(NeoPixelStatus::State::NO_GPS_FIX);
+            }
         }
         
         // Update NeoPixel animation (for flashing states)

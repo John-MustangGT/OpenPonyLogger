@@ -75,6 +75,31 @@ public:
     uint32_t get_sample_count() const;
     
     /**
+     * @brief Get the number of GPS samples collected
+     */
+    uint32_t get_gps_sample_count() const;
+    
+    /**
+     * @brief Get the number of accelerometer samples collected
+     */
+    uint32_t get_accel_sample_count() const;
+    
+    /**
+     * @brief Get the number of gyroscope samples collected
+     */
+    uint32_t get_gyro_sample_count() const;
+    
+    /**
+     * @brief Get the number of OBD samples collected
+     */
+    uint32_t get_obd_sample_count() const;
+    
+    /**
+     * @brief Get the sensor manager instance
+     */
+    SensorManager* get_sensor_manager() const { return m_sensor_manager; }
+    
+    /**
      * @brief Force a storage write and report via callback
      */
     void trigger_storage_write();
@@ -118,6 +143,10 @@ private:
     compass_data_t m_last_compass;
     battery_data_t m_last_battery;
     uint32_t m_sample_count;
+    uint32_t m_gps_samples;
+    uint32_t m_accel_samples;
+    uint32_t m_gyro_samples;
+    uint32_t m_obd_samples;
     
     // Storage write callback
     void (*m_storage_write_callback)(const gps_data_t&, const accel_data_t&, 

@@ -134,8 +134,9 @@ bool SensorManager::update_battery() {
 }
 
 bool SensorManager::update_obd() {
-    // Only update if BLE is connected
-    if (m_obd && m_obd->is_connected()) {
+    // BLE stack must run on Core 0; callers on other cores should skip
+    // StatusMonitor drives OBD update on Core 0 at 5 Hz.
+    if (m_obd && xPortGetCoreID() == 0) {
         return m_obd->update();
     }
     return false;

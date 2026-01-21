@@ -510,8 +510,11 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
             document.getElementById('uptime').textContent = 
                 `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             
-            // Update OBD data if connected
-            if (data.obd && data.obd.connected) {
+            // Update OBD data if connected AND has valid data (at least one non-zero value)
+            const hasObdData = data.obd && data.obd.connected && 
+                (data.obd.rpm > 0 || data.obd.speed_kph > 0 || data.obd.coolant_temp > 0);
+            
+            if (hasObdData) {
                 const obdSection = document.getElementById('obd-section');
                 const obdGrid = document.getElementById('obd-grid');
                 obdSection.style.display = 'block';
@@ -519,28 +522,31 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 // Clear and rebuild OBD grid
                 obdGrid.innerHTML = '';
                 
-                // Define OBD parameters to display
+                // Define OBD parameters to display (matching backend keys)
                 const obdParams = [
                     { key: 'rpm', label: 'Engine RPM', unit: 'rpm', decimals: 0 },
-                    { key: 'speed', label: 'Vehicle Speed', unit: 'km/h', decimals: 1 },
-                    { key: 'throttle', label: 'Throttle Position', unit: '%', decimals: 1 },
-                    { key: 'load', label: 'Engine Load', unit: '%', decimals: 1 },
+                    { key: 'speed_kph', label: 'Vehicle Speed', unit: 'km/h', decimals: 1 },
+                    { key: 'throttle_pos', label: 'Throttle Position', unit: '%', decimals: 1 },
+                    { key: 'engine_load', label: 'Engine Load', unit: '%', decimals: 1 },
                     { key: 'coolant_temp', label: 'Coolant Temp', unit: '°C', decimals: 1 },
-                    { key: 'intake_temp', label: 'Intake Temp', unit: '°C', decimals: 1 },
-                    { key: 'maf', label: 'MAF', unit: 'g/s', decimals: 2 },
-                    { key: 'timing_advance', label: 'Timing Advance', unit: '°', decimals: 1 }
+                    { key: 'intake_temp', label: 'Intake Temp', unit: '°C', decimals: 1 }
                 ];
                 
                 obdParams.forEach(param => {
-                    if (data.obd[param.key] !== undefined && data.obd[param.key] !== 0) {
-                        const card = document.createElement('div');
-                        card.className = 'sensor-card';
-                        card.innerHTML = `
-                            <div class="sensor-label">${param.label}</div>
-                            <div class="sensor-value">${data.obd[param.key].toFixed(param.decimals)}<span class="sensor-unit">${param.unit}</span></div>
-                        `;
-                        obdGrid.appendChild(card);
-                    }
+                    const value = data.obd[param.key];
+                    const card = document.createElement('div');
+                    card.className = 'sensor-card';
+                    
+                    // Show N/A only if value is undefined or null (0 is valid)
+                    const displayValue = (value !== undefined && value !== null) 
+                        ? value.toFixed(param.decimals) 
+                        : 'N/A';
+                    
+                    card.innerHTML = `
+                        <div class="sensor-label">${param.label}</div>
+                        <div class="sensor-value">${displayValue}<span class="sensor-unit">${param.unit}</span></div>
+                    `;
+                    obdGrid.appendChild(card);
                 });
             } else {
                 document.getElementById('obd-section').style.display = 'none';

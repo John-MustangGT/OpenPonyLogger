@@ -1,5 +1,7 @@
 #include "rt_logger_thread.h"
+#include "debug_flags.h"
 #include "../../../lib/WiFi/include/wifi_manager.h"
+#include "../../../lib/Drivers/include/icar_ble_driver.h"
 #include <Arduino.h>
 #include <cstring>
 #include <ArduinoJson.h>
@@ -12,6 +14,7 @@ RTLoggerThread::RTLoggerThread(SensorManager* sensor_manager, uint32_t update_ra
       m_obd_rate_ms(obd_rate_ms == 0 ? update_rate_ms : obd_rate_ms),
       m_task_handle(nullptr), m_running(false), m_storage_paused(false),
       m_mark_event(false), m_sample_count(0),
+      m_gps_samples(0), m_accel_samples(0), m_gyro_samples(0), m_obd_samples(0),
       m_storage_write_callback(nullptr) {
     memset(&m_last_gps, 0, sizeof(m_last_gps));
     memset(&m_last_accel, 0, sizeof(m_last_accel));
@@ -84,6 +87,22 @@ uint32_t RTLoggerThread::get_sample_count() const {
     return m_sample_count;
 }
 
+uint32_t RTLoggerThread::get_gps_sample_count() const {
+    return m_gps_samples;
+}
+
+uint32_t RTLoggerThread::get_accel_sample_count() const {
+    return m_accel_samples;
+}
+
+uint32_t RTLoggerThread::get_gyro_sample_count() const {
+    return m_gyro_samples;
+}
+
+uint32_t RTLoggerThread::get_obd_sample_count() const {
+    return m_obd_samples;
+}
+
 void RTLoggerThread::trigger_storage_write() {
     if (m_storage_write_callback) {
         m_storage_write_callback(m_last_gps, m_last_accel, m_last_gyro, m_last_compass, m_last_battery);
@@ -127,6 +146,7 @@ void RTLoggerThread::task_loop() {
             m_last_gps = m_sensor_manager->get_gps();
             last_gps_update = loop_start_ms;
             gps_updates++;
+            m_gps_samples++;
             any_updated = true;
         }
         
@@ -138,12 +158,17 @@ void RTLoggerThread::task_loop() {
             m_last_compass = m_sensor_manager->get_comp();
             last_imu_update = loop_start_ms;
             imu_updates++;
+            m_accel_samples++;
+            m_gyro_samples++;
             any_updated = true;
         }
         
-        // Update OBD if interval elapsed (handled separately in OBD driver)
+        // OBD update now driven from StatusMonitor on Core 0 to keep NimBLE stable
         if (loop_start_ms - last_obd_update >= m_obd_rate_ms) {
-            // OBD updates would go here when implemented
+            // OBD data is updated by StatusMonitor, just track timing here
+            if (IcarBleDriver::is_connected()) {
+                m_obd_samples++;
+            }
             last_obd_update = loop_start_ms;
         }
         
@@ -210,9 +235,11 @@ void RTLoggerThread::task_loop() {
             float gps_hz = gps_updates / ((loop_start_ms - last_stats_ms) / 1000.0f);
             float imu_hz = imu_updates / ((loop_start_ms - last_stats_ms) / 1000.0f);
             float overall_hz = m_sample_count > 0 ? (m_sample_count * 1000.0f) / (loop_start_ms > 0 ? loop_start_ms : 1) : 0.0f;
-            Serial.printf("[RTLogger] Measured Hz -> GPS: %.1f, IMU: %.1f, Overall: %.1f Hz (samples=%u, uptime=%ums)\n",
-                         gps_hz, imu_hz, overall_hz, m_sample_count, loop_start_ms);
-            Serial.flush();
+            if (DebugFlags::ENABLE_STATUS_REPORT) {
+                Serial.printf("[RTLogger] Measured Hz -> GPS: %.1f, IMU: %.1f, Overall: %.1f Hz (samples=%u, uptime=%ums)\n",
+                             gps_hz, imu_hz, overall_hz, m_sample_count, loop_start_ms);
+                Serial.flush();
+            }
             gps_updates = 0;
             imu_updates = 0;
             last_stats_ms = loop_start_ms;

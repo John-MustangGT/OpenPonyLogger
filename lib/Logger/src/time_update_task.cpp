@@ -1,4 +1,5 @@
 #include "time_update_task.h"
+#include "debug_flags.h"
 #include <Arduino.h>
 #include <nvs_flash.h>
 #include <nvs.h>
@@ -83,14 +84,18 @@ void TimeUpdateTask::run() {
         // Wait for GPS time notification (blocking, low priority)
         if (xQueueReceive(m_time_queue, &gps_time, portMAX_DELAY) == pdTRUE) {
             if (gps_time > 0) {
-                Serial.printf("[TimeUpdate] Received GPS time: %ld\n", gps_time);
+                if (DebugFlags::ENABLE_GPS_DEBUG) {
+                    Serial.printf("[TimeUpdate] Received GPS time: %ld\n", gps_time);
+                }
                 
                 // Update ESP32-S3 internal RTC (rate-limited)
                 if (m_last_rtc_update == 0 || (gps_time - m_last_rtc_update) >= m_rtc_update_interval_sec) {
                     timeval tv = {gps_time, 0};
                     settimeofday(&tv, nullptr);
                     m_last_rtc_update = gps_time;
-                    Serial.printf("[TimeUpdate] ESP32-S3 RTC updated to: %ld\n", gps_time);
+                    if (DebugFlags::ENABLE_GPS_DEBUG) {
+                        Serial.printf("[TimeUpdate] ESP32-S3 RTC updated to: %ld\n", gps_time);
+                    }
                 }
                 
                 // Update PCF8523 if available (rate-limited)

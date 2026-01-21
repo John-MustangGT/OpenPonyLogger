@@ -408,6 +408,11 @@ void NeoPixelStatus::setState(State state) {
         return;
     }
     
+    // Only update if state actually changed (prevents debug spam)
+    if (m_current_state == state) {
+        return;
+    }
+    
     m_current_state = state;
     m_last_flash_time = millis();
     m_pixel_on = true;  // Start with pixel on for flashing states

@@ -1,16 +1,55 @@
 #include "icar_ble_driver.h"
+#include "../Logger/include/debug_flags.h"
 #include <cstring>
 #include <algorithm>
 
 // Forward declaration
 class IcarBleDriver;
 
+// Global variables for deferred BLE connection (to avoid callback context crash)
+static bool g_pending_connection = false;
+static uint32_t g_pending_connection_time = 0;
+
 // Scan callback implementation
 void OBDScanCallback::onResult(NimBLEAdvertisedDevice* advertisedDevice) {
     std::string name = advertisedDevice->getName();
     std::string addr = advertisedDevice->getAddress().toString();
+    int rssi = advertisedDevice->getRSSI();
     
-    Serial.printf("[OBD] Found device: '%s' (%s)\n", name.c_str(), addr.c_str());
+    // Log every device found for debugging
+    if (DebugFlags::ENABLE_OBD_DEBUG) {
+        Serial.printf("[OBD-SCAN] Found device: '%s' (%s) RSSI=%d\n", 
+                      name.c_str(), addr.c_str(), rssi);
+    }
+    
+    // Add to recent devices list
+    uint32_t now = millis();
+    
+    // Check if we already have this device in recent list
+    bool found = false;
+    for (auto& device : IcarBleDriver::m_recent_devices) {
+        if (strcmp(device.address, addr.c_str()) == 0) {
+            // Update existing entry
+            device.rssi = rssi;
+            device.last_seen_ms = now;
+            strncpy(device.name, name.c_str(), sizeof(device.name) - 1);
+            device.name[sizeof(device.name) - 1] = '\0';
+            found = true;
+            break;
+        }
+    }
+    
+    // Add new device if not found
+    if (!found && IcarBleDriver::m_recent_devices.size() < 20) {  // Keep max 20 devices
+        recent_ble_device_t new_device;
+        strncpy(new_device.name, name.c_str(), sizeof(new_device.name) - 1);
+        new_device.name[sizeof(new_device.name) - 1] = '\0';
+        strncpy(new_device.address, addr.c_str(), sizeof(new_device.address) - 1);
+        new_device.address[sizeof(new_device.address) - 1] = '\0';
+        new_device.rssi = rssi;
+        new_device.last_seen_ms = now;
+        IcarBleDriver::m_recent_devices.push_back(new_device);
+    }
     
     // Check if device name matches known ELM327 adapters
     if (name.find("iCar") != std::string::npos ||
@@ -18,21 +57,42 @@ void OBDScanCallback::onResult(NimBLEAdvertisedDevice* advertisedDevice) {
         name.find("vlink") != std::string::npos ||
         name.find("vLink") != std::string::npos ||
         name.find("VLINK") != std::string::npos ||
+        name.find("IOS-Vlink") != std::string::npos ||
         name.find("OBD") != std::string::npos ||
         name.find("ELM") != std::string::npos) {
         
-        Serial.printf("[OBD] ✓ Device found: %s - attempting connection...\n", name.c_str());
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            Serial.printf("[OBD-MATCH] ✓ Matching device found: '%s' (%s) RSSI=%d\n", name.c_str(), addr.c_str(), rssi);
+        }
         
-        // Stop scanning before connecting
-        NimBLEDevice::getScan()->stop();
-        
-        // Store device name
-        strncpy(IcarBleDriver::m_device_name, name.c_str(), sizeof(IcarBleDriver::m_device_name) - 1);
-        IcarBleDriver::m_device_name[sizeof(IcarBleDriver::m_device_name) - 1] = '\0';
-        
-        // Attempt connection
-        vTaskDelay(pdMS_TO_TICKS(100));
-        IcarBleDriver::connect(addr.c_str());
+        // Only trigger connection if not already pending
+        if (!g_pending_connection) {
+            // Stop scanning before connecting
+            NimBLEDevice::getScan()->stop();
+            if (DebugFlags::ENABLE_OBD_DEBUG) {
+                Serial.println("[OBD-MATCH] Scan stopped");
+            }
+            
+            // Store device name and address for later connection
+            strncpy(IcarBleDriver::m_device_name, name.c_str(), sizeof(IcarBleDriver::m_device_name) - 1);
+            IcarBleDriver::m_device_name[sizeof(IcarBleDriver::m_device_name) - 1] = '\0';
+            
+            strncpy(IcarBleDriver::m_device_address, addr.c_str(), sizeof(IcarBleDriver::m_device_address) - 1);
+            IcarBleDriver::m_device_address[sizeof(IcarBleDriver::m_device_address) - 1] = '\0';
+            
+            // Set flag to connect from main loop (avoid callback context issues)
+            g_pending_connection = true;
+            g_pending_connection_time = millis();
+            if (DebugFlags::ENABLE_OBD_DEBUG) {
+                Serial.printf("[OBD-MATCH] Pending connection flag set for %s at time %ums\n", 
+                             IcarBleDriver::m_device_address, (uint32_t)g_pending_connection_time);
+            }
+        } else {
+            if (DebugFlags::ENABLE_OBD_DEBUG) {
+                Serial.printf("[OBD-MATCH] Connection already pending, ignoring duplicate match for %s\n", 
+                             name.c_str());
+            }
+        }
     }
 }
 
@@ -46,9 +106,12 @@ char IcarBleDriver::m_ecm_name[20] = "";
 NimBLERemoteCharacteristic* IcarBleDriver::m_rx_char = nullptr;
 NimBLERemoteCharacteristic* IcarBleDriver::m_tx_char = nullptr;
 std::vector<obd_pid_config_t> IcarBleDriver::m_configured_pids = {};
+std::vector<recent_ble_device_t> IcarBleDriver::m_recent_devices = {};
 
-// vgate iCar 2 Pro BLE UUIDs
+// vgate iCar 2 Pro BLE UUIDs (may vary by device variant)
+// Standard vgate: 0xFFE0, but some devices use custom UUIDs
 static const char* SERVICE_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb";
+static const char* SERVICE_UUID_ALT = "e7810a71-73ae-499d-8c15-faa9aef0c3f2";  // IOS-Vlink custom
 static const char* RX_CHAR_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb";  // Read/Notify from device
 static const char* TX_CHAR_UUID = "0000ffe2-0000-1000-8000-00805f9b34fb";  // Write to device
 
@@ -64,7 +127,7 @@ bool IcarBleDriver::init() {
 }
 
 bool IcarBleDriver::start_scan() {
-    Serial.println("[OBD] Starting BLE scan for ELM327-compatible device (iCar/vgate/vlink)...");
+    Serial.println("[OBD] Starting BLE scan for ELM327-compatible device (iCar/vgate/vlink/IOS-Vlink)...");
     
     NimBLEScan* scan = NimBLEDevice::getScan();
     if (!scan) {
@@ -83,9 +146,15 @@ bool IcarBleDriver::start_scan() {
     scan->setAdvertisedDeviceCallbacks(&callback);
     
     // Start scan (0 = scan indefinitely until match found)
-    scan->start(0, nullptr, false);
+    bool started = scan->start(0, nullptr, false);
     
-    return true;
+    if (started) {
+        Serial.println("[OBD] ✓ BLE scan started successfully");
+    } else {
+        Serial.println("[OBD] ✗ BLE scan failed to start!");
+    }
+    
+    return started;
 }
 
 void IcarBleDriver::stop_scan() {
@@ -96,15 +165,28 @@ void IcarBleDriver::stop_scan() {
 }
 
 bool IcarBleDriver::connect(const char* address) {
-    if (!address) return false;
+    if (!address) {
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            Serial.println("[OBD-CONNECT] ERROR: Address is null!");
+        }
+        return false;
+    }
     
-    Serial.printf("[OBD] Attempting to connect to %s\n", address);
+    if (DebugFlags::ENABLE_OBD_DEBUG) {
+        Serial.printf("[OBD-CONNECT] Starting connection sequence to %s\n", address);
+    }
     
     // Create client
     NimBLEClient* pClient = NimBLEDevice::createClient();
     if (!pClient) {
-        Serial.println("[OBD] Failed to create client");
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            Serial.println("[OBD-CONNECT] ERROR: Failed to create client");
+        }
         return false;
+    }
+    
+    if (DebugFlags::ENABLE_OBD_DEBUG) {
+        Serial.println("[OBD-CONNECT] Client created, connecting to device...");
     }
     
     // Connect to address
@@ -112,33 +194,81 @@ bool IcarBleDriver::connect(const char* address) {
     bool connected = pClient->connect(addr);
     
     if (!connected) {
-        Serial.println("[OBD] Failed to connect to remote device");
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            Serial.println("[OBD] Failed to connect to remote device");
+        }
         NimBLEDevice::deleteClient(pClient);
         return false;
     }
+
+    if (DebugFlags::ENABLE_OBD_DEBUG) {
+        Serial.println("[OBD-CONNECT] Connected");
+    }
     
-    // Get the service
+    // Skip discoverAttributes() - it blocks too long and triggers watchdog
+    // Go straight to service lookup with standard + alternate UUIDs
+    
+    if (DebugFlags::ENABLE_OBD_DEBUG) {
+        Serial.printf("[OBD-CONNECT] Looking for service %s...\n", SERVICE_UUID);
+    }
     NimBLERemoteService* pRemoteSvc = pClient->getService(SERVICE_UUID);
+    
+    // If not found, try alternate UUID (IOS-Vlink uses custom UUID)
     if (!pRemoteSvc) {
-        Serial.println("[OBD] Service not found, disconnecting");
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            Serial.printf("[OBD-CONNECT] Standard service not found, trying alternate: %s\n", SERVICE_UUID_ALT);
+        }
+        pRemoteSvc = pClient->getService(SERVICE_UUID_ALT);
+    }
+    
+    if (!pRemoteSvc) {
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            Serial.printf("[OBD] Neither service found (%s or %s), disconnecting\n", SERVICE_UUID, SERVICE_UUID_ALT);
+        }
+        pClient->disconnect();
+        NimBLEDevice::deleteClient(pClient);
+        return false;
+    }
+    if (DebugFlags::ENABLE_OBD_DEBUG) {
+        Serial.println("[OBD-CONNECT] Service found!");
+    }
+    
+    // Auto-detect RX/TX characteristics by properties instead of hardcoded UUIDs
+    // RX = characteristic with notify/indicate (device sends data to us)
+    // TX = characteristic with write (we send data to device)
+    Serial.println("[OBD-CONNECT] Auto-detecting RX/TX characteristics...");
+    
+    auto* chars = pRemoteSvc->getCharacteristics(true);  // true = force refresh
+    if (!chars || chars->empty()) {
+        Serial.println("[OBD] No characteristics found");
         pClient->disconnect();
         NimBLEDevice::deleteClient(pClient);
         return false;
     }
     
-    // Get RX characteristic (read/notify)
-    m_rx_char = pRemoteSvc->getCharacteristic(RX_CHAR_UUID);
-    if (!m_rx_char) {
-        Serial.println("[OBD] RX characteristic not found");
-        pClient->disconnect();
-        NimBLEDevice::deleteClient(pClient);
-        return false;
+    for (auto* chr : *chars) {
+        if (!chr) continue;
+        
+        // RX char: can notify or indicate (device → us)
+        if (!m_rx_char && (chr->canNotify() || chr->canIndicate())) {
+            m_rx_char = chr;
+            Serial.printf("[OBD-CONNECT] RX char: %s (notify=%d)\n", 
+                         chr->getUUID().toString().c_str(), chr->canNotify());
+        }
+        
+        // TX char: can write (us → device)
+        if (!m_tx_char && chr->canWrite()) {
+            m_tx_char = chr;
+            Serial.printf("[OBD-CONNECT] TX char: %s (write=%d)\n",
+                         chr->getUUID().toString().c_str(), chr->canWrite());
+        }
+        
+        if (m_rx_char && m_tx_char) break;  // Found both, stop searching
     }
     
-    // Get TX characteristic (write)
-    m_tx_char = pRemoteSvc->getCharacteristic(TX_CHAR_UUID);
-    if (!m_tx_char) {
-        Serial.println("[OBD] TX characteristic not found");
+    if (!m_rx_char || !m_tx_char) {
+        Serial.printf("[OBD] Missing characteristics (RX=%d, TX=%d)\n", 
+                     m_rx_char != nullptr, m_tx_char != nullptr);
         pClient->disconnect();
         NimBLEDevice::deleteClient(pClient);
         return false;
@@ -146,18 +276,53 @@ bool IcarBleDriver::connect(const char* address) {
     
     // Subscribe to notifications if available
     if (m_rx_char->canNotify()) {
-        // Use lambda function instead of callback class
+        // Use lambda to parse OBD responses (m_data is static, no capture needed)
         m_rx_char->subscribe(true, [](NimBLERemoteCharacteristic* pChar, 
-                                      uint8_t* pData, size_t length, bool isNotify) {
-            if (length > 0) {
-                Serial.printf("[OBD] Received %d bytes: ", length);
-                for (int i = 0; i < length && i < 16; i++) {
-                    Serial.printf("%02X ", pData[i]);
+                                       uint8_t* pData, size_t length, bool isNotify) {
+            // Parse OBD response in callback (avoid Serial.printf - causes crashes)
+            // Response format: 62 01 <PID> <DATA_BYTES...>
+            if (length >= 4 && pData[0] == 0x62 && pData[1] == 0x01) {
+                uint8_t pid = pData[2];
+                
+                switch (pid) {
+                    case 0x0C: // RPM (2 bytes)
+                        if (length >= 5) {
+                            m_data.engine_rpm = ((pData[3] * 256) + pData[4]) / 4.0f;
+                        }
+                        break;
+                    case 0x0D: // Speed (1 byte)
+                        if (length >= 4) {
+                            m_data.vehicle_speed = pData[3];
+                        }
+                        break;
+                    case 0x05: // Coolant temp (1 byte, offset -40)
+                        if (length >= 4) {
+                            m_data.coolant_temp = pData[3] - 40.0f;
+                        }
+                        break;
+                    case 0x11: // Throttle position (1 byte)
+                        if (length >= 4) {
+                            m_data.throttle_position = (pData[3] * 100.0f) / 255.0f;
+                        }
+                        break;
+                    case 0x04: // Engine load (1 byte)
+                        if (length >= 4) {
+                            m_data.engine_load = (pData[3] * 100.0f) / 255.0f;
+                        }
+                        break;
+                    case 0x0F: // Intake temp (1 byte, offset -40)
+                        if (length >= 4) {
+                            m_data.intake_temp = pData[3] - 40.0f;
+                        }
+                        break;
                 }
-                Serial.println();
+                m_data.valid = true;
+                m_data.last_update_ms = millis();
             }
         });
-        Serial.println("[OBD] Subscribed to RX notifications");
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            Serial.println("[OBD-CONNECT] Subscribed to RX notifications");
+        }
     }
     
     // Store address for future reconnection
@@ -175,8 +340,11 @@ bool IcarBleDriver::connect(const char* address) {
     
     Serial.printf("[OBD] Connected to %s successfully!\n", m_device_name);
     
-    // Request VIN and ECM name once connected
-    request_vehicle_info();
+    // Print heap status
+    Serial.printf("[OBD] Free heap: %u bytes\n", ESP.getFreeHeap());
+    
+    // Skip VIN/ECM queries to avoid additional BLE traffic during initial connection
+    // request_vehicle_info();
     
     return true;
 }
@@ -201,6 +369,42 @@ bool IcarBleDriver::is_connected() {
 }
 
 bool IcarBleDriver::update() {
+    // NimBLE stack must be driven from Core 0; skip if called elsewhere to avoid crashes
+    if (xPortGetCoreID() != 0) {
+        return false;
+    }
+
+    // Handle pending connection from BLE scan callback
+    if (g_pending_connection && !m_connected) {
+        // Wait 100ms after device was found to let stack settle
+        uint32_t time_since_found = millis() - g_pending_connection_time;
+        if (time_since_found >= 100) {
+            Serial.printf("[OBD-UPDATE] Attempting deferred connection to %s (delay=%ums)\n", 
+                         m_device_address, time_since_found);
+            if (connect(m_device_address)) {
+                Serial.println("[OBD-UPDATE] Connection successful!");
+                g_pending_connection = false;
+            } else {
+                Serial.println("[OBD-UPDATE] Connection attempt failed, will retry");
+                // Retry in 500ms
+                g_pending_connection_time = millis();
+            }
+        } else {
+            Serial.printf("[OBD-UPDATE] Waiting for deferred connection (%ums/%ums)\n", 
+                         time_since_found, 100);
+        }
+        return false;
+    }
+    
+    // Periodic debug output to show scan is alive
+    static uint32_t last_scan_debug = 0;
+    uint32_t now = millis();
+    if (DebugFlags::ENABLE_OBD_DEBUG && now - last_scan_debug >= 10000) {  // Every 10 seconds
+        Serial.printf("[OBD-DEBUG] Scan state: connected=%d, recent_devices=%zu, pending_conn=%d\n",
+                     m_connected, m_recent_devices.size(), g_pending_connection);
+        last_scan_debug = now;
+    }
+    
     if (!m_connected) return false;
     
     // Query common PIDs
@@ -225,12 +429,26 @@ bool IcarBleDriver::request_pid(uint8_t pid) {
     
     try {
         m_tx_char->writeValue(request, sizeof(request), false);
-        Serial.printf("[OBD] Requested PID 0x%02X\n", pid);
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            Serial.printf("[OBD] Requested PID 0x%02X\n", pid);
+        }
         return true;
     } catch (const std::exception& e) {
         Serial.printf("[OBD] Write failed: %s\n", e.what());
         return false;
     }
+}
+
+bool IcarBleDriver::has_pending_connection() {
+    return g_pending_connection;
+}
+
+uint32_t IcarBleDriver::pending_connection_age_ms() {
+    if (!g_pending_connection) {
+        return 0;
+    }
+    uint32_t now = millis();
+    return now - g_pending_connection_time;
 }
 
 const char* IcarBleDriver::get_device_address() {
@@ -493,4 +711,22 @@ bool IcarBleDriver::parse_ecm_response(const char* response, char* ecm_name) {
     }
     
     return false;
+}
+
+const std::vector<recent_ble_device_t>& IcarBleDriver::get_recent_devices() {
+    // Clean up old entries (older than 30 seconds)
+    uint32_t now = millis();
+    auto it = m_recent_devices.begin();
+    while (it != m_recent_devices.end()) {
+        if (now - it->last_seen_ms > 30000) {  // 30 seconds
+            it = m_recent_devices.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return m_recent_devices;
+}
+
+void IcarBleDriver::clear_recent_devices() {
+    m_recent_devices.clear();
 }

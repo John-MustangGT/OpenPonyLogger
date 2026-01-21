@@ -1,7 +1,7 @@
 #include "icm20948_driver.h"
+#include "../Logger/include/debug_flags.h"
 #include <Arduino.h>
-
-// ICM20948 Register Map
+#include <Wire.h>
 // ICM20948 uses register banks - must select bank before accessing registers
 #define ICM20948_REG_BANK_SEL        0x7F  // Bank 0-3 selection register
 
@@ -244,11 +244,13 @@ bool ICM20948Driver::read_compass_raw() {
 
 void ICM20948Driver::convert_accel_data(int16_t raw_x, int16_t raw_y, int16_t raw_z) {
     // Debug: Print raw values occasionally
-    static uint32_t last_debug = 0;
-    uint32_t now = millis();
-    if (now - last_debug > 5000) {
-        Serial.printf("Accel RAW: X=%d Y=%d Z=%d\n", raw_x, raw_y, raw_z);
-        last_debug = now;
+    if (DebugFlags::ENABLE_IMU_DEBUG) {
+        static uint32_t last_debug = 0;
+        uint32_t now = millis();
+        if (now - last_debug > 5000) {
+            Serial.printf("Accel RAW: X=%d Y=%d Z=%d\n", raw_x, raw_y, raw_z);
+            last_debug = now;
+        }
     }
     
     // Convert raw values to g
@@ -262,11 +264,13 @@ void ICM20948Driver::convert_accel_data(int16_t raw_x, int16_t raw_y, int16_t ra
 
 void ICM20948Driver::convert_gyro_data(int16_t raw_x, int16_t raw_y, int16_t raw_z) {
     // Debug: Print raw values occasionally
-    static uint32_t last_debug = 0;
-    uint32_t now = millis();
-    if (now - last_debug > 5000) {
-        Serial.printf("Gyro RAW: X=%d Y=%d Z=%d\n", raw_x, raw_y, raw_z);
-        last_debug = now;
+    if (DebugFlags::ENABLE_IMU_DEBUG) {
+        static uint32_t last_debug = 0;
+        uint32_t now = millis();
+        if (now - last_debug > 5000) {
+            Serial.printf("Gyro RAW: X=%d Y=%d Z=%d\n", raw_x, raw_y, raw_z);
+            last_debug = now;
+        }
     }
     
     // Convert raw values to dps (degrees per second)
@@ -280,11 +284,13 @@ void ICM20948Driver::convert_gyro_data(int16_t raw_x, int16_t raw_y, int16_t raw
 
 void ICM20948Driver::convert_compass_data(int16_t raw_x, int16_t raw_y, int16_t raw_z) {
     // Debug: Print raw values occasionally
-    static uint32_t last_debug = 0;
-    uint32_t now = millis();
-    if (now - last_debug > 5000) {
-        Serial.printf("Compass RAW: X=%d Y=%d Z=%d\n", raw_x, raw_y, raw_z);
-        last_debug = now;
+    if (DebugFlags::ENABLE_IMU_DEBUG) {
+        static uint32_t last_debug = 0;
+        uint32_t now = millis();
+        if (now - last_debug > 5000) {
+            Serial.printf("Compass RAW: X=%d Y=%d Z=%d\n", raw_x, raw_y, raw_z);
+            last_debug = now;
+        }
     }
     
     // Convert raw magnetometer values (simplified - typically in uT)
