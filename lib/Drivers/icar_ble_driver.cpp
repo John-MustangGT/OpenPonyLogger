@@ -2,9 +2,12 @@
 #include "../Logger/include/debug_flags.h"
 #include <cstring>
 #include <algorithm>
+#include <esp_log.h>
 
 // Forward declaration
 class IcarBleDriver;
+
+static const char* TAG = "OBD-BLE";
 
 // Global variables for deferred BLE connection (to avoid callback context crash)
 static bool g_pending_connection = false;
@@ -18,8 +21,8 @@ void OBDScanCallback::onResult(NimBLEAdvertisedDevice* advertisedDevice) {
     
     // Log every device found for debugging
     if (DebugFlags::ENABLE_OBD_DEBUG) {
-        Serial.printf("[OBD-SCAN] Found device: '%s' (%s) RSSI=%d\n", 
-                      name.c_str(), addr.c_str(), rssi);
+        ESP_LOGD(TAG, "Found device: '%s' (%s) RSSI=%d",
+                 name.c_str(), addr.c_str(), rssi);
     }
     
     // Add to recent devices list
@@ -62,7 +65,7 @@ void OBDScanCallback::onResult(NimBLEAdvertisedDevice* advertisedDevice) {
         name.find("ELM") != std::string::npos) {
         
         if (DebugFlags::ENABLE_OBD_DEBUG) {
-            Serial.printf("[OBD-MATCH] ✓ Matching device found: '%s' (%s) RSSI=%d\n", name.c_str(), addr.c_str(), rssi);
+            ESP_LOGD(TAG, "Matching device found: '%s' (%s) RSSI=%d", name.c_str(), addr.c_str(), rssi);
         }
         
         // Only trigger connection if not already pending
@@ -70,7 +73,7 @@ void OBDScanCallback::onResult(NimBLEAdvertisedDevice* advertisedDevice) {
             // Stop scanning before connecting
             NimBLEDevice::getScan()->stop();
             if (DebugFlags::ENABLE_OBD_DEBUG) {
-                Serial.println("[OBD-MATCH] Scan stopped");
+                ESP_LOGD(TAG, "Scan stopped");
             }
             
             // Store device name and address for later connection
@@ -84,13 +87,13 @@ void OBDScanCallback::onResult(NimBLEAdvertisedDevice* advertisedDevice) {
             g_pending_connection = true;
             g_pending_connection_time = millis();
             if (DebugFlags::ENABLE_OBD_DEBUG) {
-                Serial.printf("[OBD-MATCH] Pending connection flag set for %s at time %ums\n", 
-                             IcarBleDriver::m_device_address, (uint32_t)g_pending_connection_time);
+                ESP_LOGD(TAG, "Pending connection flag set for %s at time %ums",
+                         IcarBleDriver::m_device_address, (uint32_t)g_pending_connection_time);
             }
         } else {
             if (DebugFlags::ENABLE_OBD_DEBUG) {
-                Serial.printf("[OBD-MATCH] Connection already pending, ignoring duplicate match for %s\n", 
-                             name.c_str());
+                ESP_LOGD(TAG, "Connection already pending, ignoring duplicate match for %s",
+                         name.c_str());
             }
         }
     }
@@ -116,44 +119,44 @@ static const char* RX_CHAR_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb";  // Re
 static const char* TX_CHAR_UUID = "0000ffe2-0000-1000-8000-00805f9b34fb";  // Write to device
 
 bool IcarBleDriver::init() {
-    Serial.println("[OBD] Initializing NimBLE central...");
-    
+    ESP_LOGI(TAG, "Initializing NimBLE central");
+
     // Initialize BLE device
     NimBLEDevice::init("");
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);  // Max power for range
-    
-    Serial.println("[OBD] NimBLE initialized successfully");
+
+    ESP_LOGI(TAG, "NimBLE initialized successfully");
     return true;
 }
 
 bool IcarBleDriver::start_scan() {
-    Serial.println("[OBD] Starting BLE scan for ELM327-compatible device (iCar/vgate/vlink/IOS-Vlink)...");
-    
+    ESP_LOGI(TAG, "Starting BLE scan for ELM327-compatible device (iCar/vgate/vlink/IOS-Vlink)");
+
     NimBLEScan* scan = NimBLEDevice::getScan();
     if (!scan) {
-        Serial.println("[OBD] Failed to get scan instance");
+        ESP_LOGE(TAG, "Failed to get scan instance");
         return false;
     }
-    
+
     // Configure scan parameters
     scan->setInterval(97);   // Interval in 0.625ms units (~60ms)
     scan->setWindow(32);     // Window in 0.625ms units (~20ms)
     scan->setActiveScan(true);
     scan->setDuplicateFilter(true);
-    
+
     // Set scan callback to auto-connect when device found
     static OBDScanCallback callback;
     scan->setAdvertisedDeviceCallbacks(&callback);
-    
+
     // Start scan (0 = scan indefinitely until match found)
     bool started = scan->start(0, nullptr, false);
-    
+
     if (started) {
-        Serial.println("[OBD] ✓ BLE scan started successfully");
+        ESP_LOGI(TAG, "BLE scan started successfully");
     } else {
-        Serial.println("[OBD] ✗ BLE scan failed to start!");
+        ESP_LOGE(TAG, "BLE scan failed to start");
     }
-    
+
     return started;
 }
 
@@ -167,80 +170,80 @@ void IcarBleDriver::stop_scan() {
 bool IcarBleDriver::connect(const char* address) {
     if (!address) {
         if (DebugFlags::ENABLE_OBD_DEBUG) {
-            Serial.println("[OBD-CONNECT] ERROR: Address is null!");
+            ESP_LOGE(TAG, "Address is null");
         }
         return false;
     }
-    
+
     if (DebugFlags::ENABLE_OBD_DEBUG) {
-        Serial.printf("[OBD-CONNECT] Starting connection sequence to %s\n", address);
+        ESP_LOGD(TAG, "Starting connection sequence to %s", address);
     }
     
     // Create client
     NimBLEClient* pClient = NimBLEDevice::createClient();
     if (!pClient) {
         if (DebugFlags::ENABLE_OBD_DEBUG) {
-            Serial.println("[OBD-CONNECT] ERROR: Failed to create client");
+            ESP_LOGE(TAG, "Failed to create client");
         }
         return false;
     }
-    
+
     if (DebugFlags::ENABLE_OBD_DEBUG) {
-        Serial.println("[OBD-CONNECT] Client created, connecting to device...");
+        ESP_LOGD(TAG, "Client created, connecting to device");
     }
     
     // Connect to address
     NimBLEAddress addr(address);
     bool connected = pClient->connect(addr);
-    
+
     if (!connected) {
         if (DebugFlags::ENABLE_OBD_DEBUG) {
-            Serial.println("[OBD] Failed to connect to remote device");
+            ESP_LOGE(TAG, "Failed to connect to remote device");
         }
         NimBLEDevice::deleteClient(pClient);
         return false;
     }
 
     if (DebugFlags::ENABLE_OBD_DEBUG) {
-        Serial.println("[OBD-CONNECT] Connected");
+        ESP_LOGD(TAG, "Connected");
     }
     
     // Skip discoverAttributes() - it blocks too long and triggers watchdog
     // Go straight to service lookup with standard + alternate UUIDs
-    
+
     if (DebugFlags::ENABLE_OBD_DEBUG) {
-        Serial.printf("[OBD-CONNECT] Looking for service %s...\n", SERVICE_UUID);
+        ESP_LOGD(TAG, "Looking for service %s", SERVICE_UUID);
     }
     NimBLERemoteService* pRemoteSvc = pClient->getService(SERVICE_UUID);
-    
+
     // If not found, try alternate UUID (IOS-Vlink uses custom UUID)
     if (!pRemoteSvc) {
         if (DebugFlags::ENABLE_OBD_DEBUG) {
-            Serial.printf("[OBD-CONNECT] Standard service not found, trying alternate: %s\n", SERVICE_UUID_ALT);
+            ESP_LOGD(TAG, "Standard service not found, trying alternate: %s", SERVICE_UUID_ALT);
         }
         pRemoteSvc = pClient->getService(SERVICE_UUID_ALT);
     }
-    
+
     if (!pRemoteSvc) {
         if (DebugFlags::ENABLE_OBD_DEBUG) {
-            Serial.printf("[OBD] Neither service found (%s or %s), disconnecting\n", SERVICE_UUID, SERVICE_UUID_ALT);
+            ESP_LOGE(TAG, "Neither service found (%s or %s), disconnecting", SERVICE_UUID, SERVICE_UUID_ALT);
         }
         pClient->disconnect();
         NimBLEDevice::deleteClient(pClient);
         return false;
     }
     if (DebugFlags::ENABLE_OBD_DEBUG) {
-        Serial.println("[OBD-CONNECT] Service found!");
+        ESP_LOGD(TAG, "Service found");
     }
     
     // Auto-detect RX/TX characteristics by properties instead of hardcoded UUIDs
     // RX = characteristic with notify/indicate (device sends data to us)
     // TX = characteristic with write (we send data to device)
-    Serial.println("[OBD-CONNECT] Auto-detecting RX/TX characteristics...");
-    
+    ESP_LOGI(TAG, "Auto-detecting RX/TX characteristics");
+
     auto* chars = pRemoteSvc->getCharacteristics(true);  // true = force refresh
     if (!chars || chars->empty()) {
-        Serial.println("[OBD] No characteristics found");
+        ESP_LOGE(TAG, "No characteristics found");
         pClient->disconnect();
         NimBLEDevice::deleteClient(pClient);
         return false;
@@ -248,27 +251,31 @@ bool IcarBleDriver::connect(const char* address) {
     
     for (auto* chr : *chars) {
         if (!chr) continue;
-        
+
         // RX char: can notify or indicate (device → us)
         if (!m_rx_char && (chr->canNotify() || chr->canIndicate())) {
             m_rx_char = chr;
-            Serial.printf("[OBD-CONNECT] RX char: %s (notify=%d)\n", 
-                         chr->getUUID().toString().c_str(), chr->canNotify());
+            if (DebugFlags::ENABLE_OBD_DEBUG) {
+                ESP_LOGD(TAG, "RX char: %s (notify=%d)",
+                        chr->getUUID().toString().c_str(), chr->canNotify());
+            }
         }
-        
+
         // TX char: can write (us → device)
         if (!m_tx_char && chr->canWrite()) {
             m_tx_char = chr;
-            Serial.printf("[OBD-CONNECT] TX char: %s (write=%d)\n",
-                         chr->getUUID().toString().c_str(), chr->canWrite());
+            if (DebugFlags::ENABLE_OBD_DEBUG) {
+                ESP_LOGD(TAG, "TX char: %s (write=%d)",
+                        chr->getUUID().toString().c_str(), chr->canWrite());
+            }
         }
-        
+
         if (m_rx_char && m_tx_char) break;  // Found both, stop searching
     }
-    
+
     if (!m_rx_char || !m_tx_char) {
-        Serial.printf("[OBD] Missing characteristics (RX=%d, TX=%d)\n", 
-                     m_rx_char != nullptr, m_tx_char != nullptr);
+        ESP_LOGE(TAG, "Missing characteristics (RX=%d, TX=%d)",
+                m_rx_char != nullptr, m_tx_char != nullptr);
         pClient->disconnect();
         NimBLEDevice::deleteClient(pClient);
         return false;
@@ -323,7 +330,7 @@ bool IcarBleDriver::connect(const char* address) {
             }
         });
         if (DebugFlags::ENABLE_OBD_DEBUG) {
-            Serial.println("[OBD-CONNECT] Subscribed to RX notifications");
+            ESP_LOGD(TAG, "Subscribed to RX notifications");
         }
     }
     
@@ -339,11 +346,13 @@ bool IcarBleDriver::connect(const char* address) {
     m_connected = true;
     m_data.connected = true;
     m_data.last_update_ms = millis();
-    
-    Serial.printf("[OBD] Connected to %s successfully!\n", m_device_name);
-    
+
+    ESP_LOGI(TAG, "Connected to %s successfully", m_device_name);
+
     // Print heap status
-    Serial.printf("[OBD] Free heap: %u bytes\n", ESP.getFreeHeap());
+    if (DebugFlags::ENABLE_OBD_DEBUG) {
+        ESP_LOGD(TAG, "Free heap: %u bytes", ESP.getFreeHeap());
+    }
     
     // Skip VIN/ECM queries to avoid additional BLE traffic during initial connection
     // request_vehicle_info();
@@ -356,14 +365,14 @@ void IcarBleDriver::disconnect() {
     m_data.connected = false;
     m_rx_char = nullptr;
     m_tx_char = nullptr;
-    
+
     // Clear device info
     m_device_name[0] = '\0';
     m_vin[0] = '\0';
     m_ecm_name[0] = '\0';
-    
+
     NimBLEDevice::deinit(false);
-    Serial.println("[OBD] Disconnected from device");
+    ESP_LOGI(TAG, "Disconnected from device");
 }
 
 bool IcarBleDriver::is_connected() {
@@ -381,19 +390,23 @@ bool IcarBleDriver::update() {
         // Wait 100ms after device was found to let stack settle
         uint32_t time_since_found = millis() - g_pending_connection_time;
         if (time_since_found >= 100) {
-            Serial.printf("[OBD-UPDATE] Attempting deferred connection to %s (delay=%ums)\n", 
-                         m_device_address, time_since_found);
+            if (DebugFlags::ENABLE_OBD_DEBUG) {
+                ESP_LOGD(TAG, "Attempting deferred connection to %s (delay=%ums)",
+                        m_device_address, time_since_found);
+            }
             if (connect(m_device_address)) {
-                Serial.println("[OBD-UPDATE] Connection successful!");
+                ESP_LOGI(TAG, "Connection successful");
                 g_pending_connection = false;
             } else {
-                Serial.println("[OBD-UPDATE] Connection attempt failed, will retry");
+                ESP_LOGW(TAG, "Connection attempt failed, will retry");
                 // Retry in 500ms
                 g_pending_connection_time = millis();
             }
         } else {
-            Serial.printf("[OBD-UPDATE] Waiting for deferred connection (%ums/%ums)\n", 
-                         time_since_found, 100);
+            if (DebugFlags::ENABLE_OBD_DEBUG) {
+                ESP_LOGD(TAG, "Waiting for deferred connection (%ums/%ums)",
+                        time_since_found, 100);
+            }
         }
         return false;
     }
@@ -402,8 +415,8 @@ bool IcarBleDriver::update() {
     static uint32_t last_scan_debug = 0;
     uint32_t now = millis();
     if (DebugFlags::ENABLE_OBD_DEBUG && now - last_scan_debug >= 10000) {  // Every 10 seconds
-        Serial.printf("[OBD-DEBUG] Scan state: connected=%d, recent_devices=%zu, pending_conn=%d\n",
-                     m_connected, m_recent_devices.size(), g_pending_connection);
+        ESP_LOGD(TAG, "Scan state: connected=%d, recent_devices=%zu, pending_conn=%d",
+                m_connected, m_recent_devices.size(), g_pending_connection);
         last_scan_debug = now;
     }
     
@@ -420,23 +433,23 @@ obd_data_t IcarBleDriver::get_data() {
 
 bool IcarBleDriver::request_pid(uint8_t pid) {
     if (!m_connected || !m_tx_char) {
-        Serial.println("[OBD] Not connected, cannot request PID");
+        ESP_LOGW(TAG, "Not connected, cannot request PID");
         return false;
     }
-    
+
     // Construct OBD-II request: 62 01 <PID>
     // 62 = Service 01 (read data by identifier)
     // 01 = PID mode
     uint8_t request[3] = {0x62, 0x01, pid};
-    
+
     try {
         m_tx_char->writeValue(request, sizeof(request), false);
         if (DebugFlags::ENABLE_OBD_DEBUG) {
-            Serial.printf("[OBD] Requested PID 0x%02X\n", pid);
+            ESP_LOGD(TAG, "Requested PID 0x%02X", pid);
         }
         return true;
     } catch (const std::exception& e) {
-        Serial.printf("[OBD] Write failed: %s\n", e.what());
+        ESP_LOGE(TAG, "Write failed: %s", e.what());
         return false;
     }
 }
@@ -471,11 +484,11 @@ bool IcarBleDriver::add_pid(uint8_t pid, uint32_t poll_interval_ms, const char* 
             // Update existing PID
             pid_config.poll_interval_ms = poll_interval_ms;
             pid_config.description = description;
-            Serial.printf("[OBD] Updated PID 0x%02X polling interval to %u ms\n", pid, poll_interval_ms);
+            ESP_LOGI(TAG, "Updated PID 0x%02X polling interval to %u ms", pid, poll_interval_ms);
             return true;
         }
     }
-    
+
     // Add new PID
     obd_pid_config_t new_pid = {
         .pid = pid,
@@ -483,18 +496,18 @@ bool IcarBleDriver::add_pid(uint8_t pid, uint32_t poll_interval_ms, const char* 
         .last_poll_ms = 0,
         .description = description
     };
-    
+
     m_configured_pids.push_back(new_pid);
-    Serial.printf("[OBD] Added PID 0x%02X (%s) with interval %u ms\n", pid, description, poll_interval_ms);
+    ESP_LOGI(TAG, "Added PID 0x%02X (%s) with interval %u ms", pid, description, poll_interval_ms);
     return true;
 }
 
 void IcarBleDriver::remove_pid(uint8_t pid) {
     auto it = std::find_if(m_configured_pids.begin(), m_configured_pids.end(),
                           [pid](const obd_pid_config_t& config) { return config.pid == pid; });
-    
+
     if (it != m_configured_pids.end()) {
-        Serial.printf("[OBD] Removed PID 0x%02X\n", pid);
+        ESP_LOGI(TAG, "Removed PID 0x%02X", pid);
         m_configured_pids.erase(it);
     }
 }
@@ -505,7 +518,7 @@ const std::vector<obd_pid_config_t>& IcarBleDriver::get_configured_pids() {
 
 void IcarBleDriver::clear_all_pids() {
     m_configured_pids.clear();
-    Serial.println("[OBD] Cleared all configured PIDs");
+    ESP_LOGI(TAG, "Cleared all configured PIDs");
 }
 
 const char* IcarBleDriver::get_device_name() {
@@ -522,48 +535,56 @@ const char* IcarBleDriver::get_ecm_name() {
 
 void IcarBleDriver::request_vehicle_info() {
     if (!m_connected || !m_tx_char || !m_rx_char) {
-        Serial.println("[OBD] Cannot request vehicle info - not connected");
+        ESP_LOGE(TAG, "Cannot request vehicle info - not connected");
         return;
     }
-    
-    Serial.println("[OBD] Requesting vehicle VIN and ECM name...");
-    
+
+    ESP_LOGI(TAG, "Requesting vehicle VIN and ECM name");
+
     // Initialize to empty
     m_vin[0] = '\0';
     m_ecm_name[0] = '\0';
-    
+
     static EXT_RAM_ATTR char response[512];
-    
+
     // Request VIN (Mode 09, PID 02)
-    Serial.println("[OBD] Sending VIN request (09 02)...");
+    if (DebugFlags::ENABLE_OBD_DEBUG) {
+        ESP_LOGD(TAG, "Sending VIN request (09 02)");
+    }
     if (send_obd_command("09 02\r", response, sizeof(response), 3000)) {
-        Serial.printf("[OBD] VIN response: %s\n", response);
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            ESP_LOGD(TAG, "VIN response: %s", response);
+        }
         if (parse_vin_response(response, m_vin)) {
-            Serial.printf("[OBD] VIN retrieved: %s\n", m_vin);
+            ESP_LOGI(TAG, "VIN retrieved: %s", m_vin);
         } else {
-            Serial.println("[OBD] Failed to parse VIN");
+            ESP_LOGE(TAG, "Failed to parse VIN");
             strncpy(m_vin, "N/A", sizeof(m_vin) - 1);
         }
     } else {
-        Serial.println("[OBD] No response for VIN request");
+        ESP_LOGW(TAG, "No response for VIN request");
         strncpy(m_vin, "N/A", sizeof(m_vin) - 1);
     }
-    
+
     // Small delay between requests
     delay(500);
-    
+
     // Request ECM name (Mode 09, PID 0A)
-    Serial.println("[OBD] Sending ECM name request (09 0A)...");
+    if (DebugFlags::ENABLE_OBD_DEBUG) {
+        ESP_LOGD(TAG, "Sending ECM name request (09 0A)");
+    }
     if (send_obd_command("09 0A\r", response, sizeof(response), 3000)) {
-        Serial.printf("[OBD] ECM response: %s\n", response);
+        if (DebugFlags::ENABLE_OBD_DEBUG) {
+            ESP_LOGD(TAG, "ECM response: %s", response);
+        }
         if (parse_ecm_response(response, m_ecm_name)) {
-            Serial.printf("[OBD] ECM name retrieved: %s\n", m_ecm_name);
+            ESP_LOGI(TAG, "ECM name retrieved: %s", m_ecm_name);
         } else {
-            Serial.println("[OBD] Failed to parse ECM name");
+            ESP_LOGE(TAG, "Failed to parse ECM name");
             strncpy(m_ecm_name, "N/A", sizeof(m_ecm_name) - 1);
         }
     } else {
-        Serial.println("[OBD] No response for ECM request");
+        ESP_LOGW(TAG, "No response for ECM request");
         strncpy(m_ecm_name, "N/A", sizeof(m_ecm_name) - 1);
     }
 }

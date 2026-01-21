@@ -90,11 +90,11 @@ void StatusMonitor::print_status_now() {
     
     char buffer[128];
     
-    Serial.println("╔═══════════════════════════════════════════════════════════╗");
-    snprintf(buffer, sizeof(buffer), "║ STATUS REPORT - Uptime: %u:%02u:%02u (writes: %u)", 
+    ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════════════╗");
+    snprintf(buffer, sizeof(buffer), "║ STATUS REPORT - Uptime: %u:%02u:%02u (writes: %u)",
              uptime_sec / 3600, (uptime_sec / 60) % 60, uptime_sec % 60, m_write_count);
-    Serial.println(buffer);
-    Serial.println("╠═══════════════════════════════════════════════════════════╣");
+    ESP_LOGI(TAG, "%s", buffer);
+    ESP_LOGI(TAG, "╠═══════════════════════════════════════════════════════════╣");
     
     if (m_rt_logger != nullptr) {
         // Get latest sensor data
@@ -109,30 +109,30 @@ void StatusMonitor::print_status_now() {
         if (gps.valid) {
             snprintf(buffer, sizeof(buffer), "║ GPS: VALID - Lat:%.6f Lon:%.6f Alt:%.1fm Sats:%d Time:%02u:%02u:%02u",
                      gps.latitude, gps.longitude, gps.altitude, gps.satellites, gps.hour, gps.minute, gps.second);
-            Serial.println(buffer);
+            ESP_LOGI(TAG, "%s", buffer);
         } else {
-            Serial.println("║ GPS: NO FIX");
+            ESP_LOGI(TAG, "║ GPS: NO FIX");
         }
-        Serial.println("║");
+        ESP_LOGI(TAG, "║");
         
         // IMU Status
         snprintf(buffer, sizeof(buffer), "║ Accel: X=%.2fg Y=%.2fg Z=%.2fg | Temp: %.1f%s",
                  accel.x, accel.y, accel.z, convert_temperature(accel.temperature), get_temp_unit());
-        Serial.println(buffer);
+        ESP_LOGI(TAG, "%s", buffer);
         snprintf(buffer, sizeof(buffer), "║ Gyro:  X=%.1fdps Y=%.1fdps Z=%.1fdps",
                  gyro.x, gyro.y, gyro.z);
-        Serial.println(buffer);
+        ESP_LOGI(TAG, "%s", buffer);
         snprintf(buffer, sizeof(buffer), "║ Compass: X=%.1fuT Y=%.1fuT Z=%.1fuT",
                  compass.x, compass.y, compass.z);
-        Serial.println(buffer);
-        Serial.println("║");
+        ESP_LOGI(TAG, "%s", buffer);
+        ESP_LOGI(TAG, "║");
         
         // Battery Status
         snprintf(buffer, sizeof(buffer), "║ Battery: %.1f%% SOC | %.2fV | %d mA | %.1f°C",
-                 battery.state_of_charge, battery.voltage, (int)battery.current, 
+                 battery.state_of_charge, battery.voltage, (int)battery.current,
                  battery.temperature / 100.0f);
-        Serial.println(buffer);
-        Serial.println("║");
+        ESP_LOGI(TAG, "%s", buffer);
+        ESP_LOGI(TAG, "║");
         
         float sample_hz = sample_count > 0 && uptime_sec > 0 ? (float)sample_count / uptime_sec : 0.0f;
         if (!isfinite(sample_hz) || sample_hz < 0.0f) {
@@ -141,42 +141,41 @@ void StatusMonitor::print_status_now() {
         // Sample count
         snprintf(buffer, sizeof(buffer), "║ Samples logged: %u (%.1f samples/sec)",
              sample_count, sample_hz);
-        Serial.println(buffer);
+        ESP_LOGI(TAG, "%s", buffer);
         
         // OBD BLE status
         bool obd_connected = IcarBleDriver::is_connected();
         const char* obd_device = IcarBleDriver::get_device_name();
         snprintf(buffer, sizeof(buffer), "║ OBD status check: connected=%d", obd_connected);
-        Serial.println(buffer);
+        ESP_LOGI(TAG, "%s", buffer);
         if (obd_connected && obd_device[0] != '\0') {
             snprintf(buffer, sizeof(buffer), "║ OBD device: %s", obd_device);
-            Serial.println(buffer);
+            ESP_LOGI(TAG, "%s", buffer);
         }
         
         // Show recently seen BLE devices
         const auto& recent_devices = IcarBleDriver::get_recent_devices();
         if (!recent_devices.empty()) {
             snprintf(buffer, sizeof(buffer), "║ Recent BLE devices (%zu seen):", recent_devices.size());
-            Serial.println(buffer);
+            ESP_LOGI(TAG, "%s", buffer);
             for (const auto& dev : recent_devices) {
-                snprintf(buffer, sizeof(buffer), "║   '%s' (%s) RSSI=%d", 
+                snprintf(buffer, sizeof(buffer), "║   '%s' (%s) RSSI=%d",
                          dev.name, dev.address, dev.rssi);
-                Serial.println(buffer);
+                ESP_LOGI(TAG, "%s", buffer);
             }
         } else {
             const bool pending = IcarBleDriver::has_pending_connection();
             const uint32_t pending_age = IcarBleDriver::pending_connection_age_ms();
             snprintf(buffer, sizeof(buffer), "║ Recent BLE devices: none in last 30s (pending_conn=%d, age=%ums)",
                      pending ? 1 : 0, pending_age);
-            Serial.println(buffer);
+            ESP_LOGI(TAG, "%s", buffer);
         }
         
         // NeoPixel state updated in main task loop (not here)
         // Display update moved to main task loop
     }
     
-    Serial.println("╚═══════════════════════════════════════════════════════════╝");
-    Serial.flush();
+    ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════════════╝");
 }
 
 void StatusMonitor::task_wrapper(void* arg) {
@@ -201,8 +200,8 @@ void StatusMonitor::task_loop() {
     uint32_t loop_count = 0;
     uint32_t broadcast_count = 0;
     uint32_t yield_count = 0;
-    
-    Serial.println("[StatusMonitor] Task loop started on Core 0");
+
+    ESP_LOGI(TAG, "[StatusMonitor] Task loop started on Core 0");
     
     while (m_running) {
         loop_count++;
@@ -222,10 +221,10 @@ void StatusMonitor::task_loop() {
             if (m_rt_logger != nullptr) {
                 if (m_rt_logger->is_storage_paused()) {
                     m_rt_logger->resume_storage();
-                    Serial.println("[Button] D0: Storage RESUMED");
+                    ESP_LOGI(TAG, "[Button] D0: Storage RESUMED");
                 } else {
                     m_rt_logger->pause_storage();
-                    Serial.println("[Button] D0: Storage PAUSED");
+                    ESP_LOGI(TAG, "[Button] D0: Storage PAUSED");
                 }
             }
         }
@@ -237,14 +236,13 @@ void StatusMonitor::task_loop() {
         if (d1_state != d1_last_state) {
             d1_press_time = now;
             d1_pressed = false;
-            Serial.printf("[D1] State changed: %d\n", d1_state);
-            // Serial.flush() removed - blocks Core 0 for 10-50ms
+            ESP_LOGI(TAG, "[D1] State changed: %d", d1_state);
         }
-        
+
         // Check for debounced button press (HIGH state for D1)
         if (d1_state == HIGH && !d1_pressed && (now - d1_press_time) >= BUTTON_DEBOUNCE_MS) {
             d1_pressed = true;
-            Serial.println("[Button] D1: Display mode cycled!");
+            ESP_LOGI(TAG, "[Button] D1: Display mode cycled!");
             // Cycle display mode
             ST7789Display::cycle_display_mode();
             
@@ -264,18 +262,17 @@ void StatusMonitor::task_loop() {
         if (d2_state != d2_last_state) {
             d2_press_time = now;
             d2_pressed = false;
-            Serial.printf("[D2] State changed: %d\n", d2_state);
-            // Serial.flush() removed - blocks Core 0 for 10-50ms
+            ESP_LOGI(TAG, "[D2] State changed: %d", d2_state);
         }
-        
+
         // Check for debounced button press (HIGH state for D2)
         if (d2_state == HIGH && !d2_pressed && (now - d2_press_time) >= BUTTON_DEBOUNCE_MS) {
             d2_pressed = true;
             // Mark event - log regardless of pause state
-            Serial.println("Event");
+            ESP_LOGI(TAG, "Event");
             if (m_rt_logger != nullptr && !m_rt_logger->is_storage_paused()) {
                 m_rt_logger->mark_event();
-                Serial.println("[Button] D2: Event marked in storage!");
+                ESP_LOGI(TAG, "[Button] D2: Event marked in storage!");
             }
         }
         d2_last_state = d2_state;
@@ -298,7 +295,7 @@ void StatusMonitor::task_loop() {
         // Debug: Print USB detection status every 10 seconds
         static uint32_t last_debug_time = 0;
         if (DebugFlags::ENABLE_POWER_DEBUG && now - last_debug_time >= 10000) {
-            Serial.printf("[Power DEBUG] GPIO19=%d, BattV=%.2fV, gpio_usb=%d, voltage_usb=%d, final_usb=%d, shutdown=%d\n",
+            ESP_LOGI(TAG, "[Power DEBUG] GPIO19=%d, BattV=%.2fV, gpio_usb=%d, voltage_usb=%d, final_usb=%d, shutdown=%d",
                          digitalRead(VBUS_DETECT_PIN), battery_voltage, gpio_usb, voltage_usb, usb_present, m_shutdown_pending);
             last_debug_time = now;
         }
@@ -306,16 +303,16 @@ void StatusMonitor::task_loop() {
         if (!m_shutdown_pending) {
             if (usb_present && !m_usb_powered) {
                 // USB power restored
-                Serial.println("[Power] USB power restored!");
+                ESP_LOGI(TAG, "[Power] USB power restored!");
                 m_usb_powered = true;
                 m_usb_loss_time = 0;
             } else if (!usb_present && m_usb_powered) {
                 // USB power lost - start countdown
-                Serial.println("[Power] USB power lost! Starting 60-second countdown...");
+                ESP_LOGI(TAG, "[Power] USB power lost! Starting 60-second countdown...");
                 m_usb_powered = false;
                 m_usb_loss_time = now;
                 m_shutdown_pending = true;
-                
+
                 // Set NeoPixel to shutdown state (purple pulsing)
                 NeoPixelStatus::setState(NeoPixelStatus::State::SHUTDOWN);
             }
@@ -325,20 +322,20 @@ void StatusMonitor::task_loop() {
         if (m_shutdown_pending && !m_shutdown_initiated) {
             if (usb_present) {
                 // Power restored - cancel shutdown
-                Serial.println("[Power] USB restored - shutdown canceled!");
+                ESP_LOGI(TAG, "[Power] USB restored - shutdown canceled!");
                 m_shutdown_pending = false;
                 m_usb_powered = true;
                 m_usb_loss_time = 0;
-                
+
                 // Restore previous NeoPixel state (will be updated in next status update)
             } else {
                 // Check if timeout expired
                 uint32_t time_since_loss = now - m_usb_loss_time;
                 if (time_since_loss >= USB_TIMEOUT_MS) {
                     // Timeout expired - initiate shutdown
-                    Serial.println("[Power] Countdown complete - initiating shutdown...");
+                    ESP_LOGI(TAG, "[Power] Countdown complete - initiating shutdown...");
                     m_shutdown_initiated = true;
-                    
+
                     // Stop the task loop after this iteration
                     m_running = false;
                 } else {
@@ -412,7 +409,7 @@ void StatusMonitor::task_loop() {
                 if (DebugFlags::ENABLE_DISPLAY_TIMING) {
                     uint32_t display_elapsed = millis() - display_start;
                     if (display_elapsed > 10) {
-                        Serial.printf("[Display] Update took %ums\n", display_elapsed);
+                        ESP_LOGI(TAG, "[Display] Update took %ums", display_elapsed);
                     }
                 }
             } else if (current_mode == DisplayMode::INFO_SCREEN) {
@@ -437,14 +434,14 @@ void StatusMonitor::task_loop() {
                 uint32_t gyro_samples = m_rt_logger->get_gyro_sample_count();
                 uint32_t obd_samples = m_rt_logger->get_obd_sample_count();
                 bool is_paused = m_rt_logger->is_storage_paused();
-                Serial.printf("[10s] GPS:%u IMU:%u Gyro:%u OBD:%u | Paused:%d | Heap:%u\n",
+                ESP_LOGI(TAG, "[10s] GPS:%u IMU:%u Gyro:%u OBD:%u | Paused:%d | Heap:%u",
                     gps_samples, accel_samples, gyro_samples, obd_samples, is_paused, ESP.getFreeHeap());
                 last_sample_count_print = now;
             }
             
             // Full status report if enabled
             if (DebugFlags::ENABLE_STATUS_REPORT) {
-                Serial.printf("[StatusMonitor] STATUS REPORT #%u (loops=%u, broadcasts=%u, yields=%u)\n",
+                ESP_LOGI(TAG, "[StatusMonitor] STATUS REPORT #%u (loops=%u, broadcasts=%u, yields=%u)",
                     m_write_count, loop_count, broadcast_count, yield_count);
                 print_status_now();
                 // Yield after large serial output to prevent blocking
@@ -480,33 +477,32 @@ void StatusMonitor::task_loop() {
     
     // Task loop has exited - handle shutdown if initiated
     if (m_shutdown_initiated) {
-        Serial.println("[Power] Executing graceful shutdown sequence...");
-        
+        ESP_LOGI(TAG, "[Power] Executing graceful shutdown sequence...");
+
         // Close current logging session
         if (m_rt_logger != nullptr) {
-            Serial.println("[Power] Closing logging session...");
+            ESP_LOGI(TAG, "[Power] Closing logging session...");
             // The RTLogger thread will write the final header when stopped
         }
-        
+
         // Configure wake sources
-        Serial.println("[Power] Configuring wake sources...");
-        
+        ESP_LOGI(TAG, "[Power] Configuring wake sources...");
+
         // Wake on GPIO19 (VBUS) rising edge - USB power restored
         esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_DETECT_PIN, 1);
-        
+
         // Wake on GPIO0 (D0 button) falling edge - button press
         esp_sleep_enable_ext1_wakeup(1ULL << BUTTON_D0, ESP_EXT1_WAKEUP_ANY_LOW);
-        
+
         // Turn off display
         ST7789Display::off();
-        
+
         // Final message
-        Serial.println("[Power] Entering deep sleep...");
-        Serial.println("[Power] Wake sources: USB power (GPIO19) or D0 button (GPIO0)");
-        Serial.flush();
-        
+        ESP_LOGI(TAG, "[Power] Entering deep sleep...");
+        ESP_LOGI(TAG, "[Power] Wake sources: USB power (GPIO19) or D0 button (GPIO0)");
+
         delay(100);
-        
+
         // Enter deep sleep
         esp_deep_sleep_start();
     }

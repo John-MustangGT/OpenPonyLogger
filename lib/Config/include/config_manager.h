@@ -55,7 +55,10 @@ struct logging_config_t {
     
     // OBD-II BLE configuration
     bool obd_ble_enabled;   // Enable/disable BLE scanning for OBD-II devices
-    
+
+    // Log level (0=NONE, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG, 5=VERBOSE)
+    uint8_t log_level;      // Default: INFO (3)
+
     // Network configuration
     network_config_t network;
     
@@ -63,8 +66,8 @@ struct logging_config_t {
     std::map<uint8_t, pid_config_t> pid_configs;
     
     // Default constructor with 10Hz across the board
-    logging_config_t() 
-        : main_loop_hz(10), gps_hz(10), imu_hz(10), obd_hz(10), obd_ble_enabled(true) {
+    logging_config_t()
+        : main_loop_hz(10), gps_hz(10), imu_hz(10), obd_hz(10), obd_ble_enabled(true), log_level(3) {
         // Initialize core PIDs (enabled by default at 10Hz)
         pid_configs[0x0C] = pid_config_t(0x0C, 10, true, "Engine RPM");
         pid_configs[0x0D] = pid_config_t(0x0D, 10, true, "Vehicle Speed");
@@ -148,6 +151,7 @@ private:
     static const char* KEY_IMU_HZ;
     static const char* KEY_OBD_HZ;
     static const char* KEY_OBD_BLE_ENABLED;
+    static const char* KEY_LOG_LEVEL;
     static const char* KEY_NET_SSID;
     static const char* KEY_NET_PASSWORD;
     static const char* KEY_NET_IP;

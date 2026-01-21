@@ -5,6 +5,9 @@
 #include <Arduino.h>
 #include <cstring>
 #include <ArduinoJson.h>
+#include <esp_log.h>
+
+static const char* TAG = "RTLogger";
 
 RTLoggerThread::RTLoggerThread(SensorManager* sensor_manager, uint32_t update_rate_ms,
                                uint32_t gps_rate_ms, uint32_t imu_rate_ms, uint32_t obd_rate_ms)
@@ -129,9 +132,8 @@ void RTLoggerThread::task_loop() {
     // Debug: Print once at start
     static bool first_run = true;
     if (first_run) {
-        Serial.printf("RT Logger thread started - Main: %dms, GPS: %dms, IMU: %dms, OBD: %dms\n",
+        ESP_LOGI(TAG, "RT Logger thread started - Main: %dms, GPS: %dms, IMU: %dms, OBD: %dms",
                      m_update_rate_ms, m_gps_rate_ms, m_imu_rate_ms, m_obd_rate_ms);
-        // Serial.flush() removed - can block Core 1 for 10-50ms
         first_run = false;
     }
     
@@ -238,9 +240,8 @@ void RTLoggerThread::task_loop() {
             float imu_hz = imu_updates / ((loop_start_ms - last_stats_ms) / 1000.0f);
             float overall_hz = m_sample_count > 0 ? (m_sample_count * 1000.0f) / (loop_start_ms > 0 ? loop_start_ms : 1) : 0.0f;
             if (DebugFlags::ENABLE_STATUS_REPORT) {
-                Serial.printf("[RTLogger] Measured Hz -> GPS: %.1f, IMU: %.1f, Overall: %.1f Hz (samples=%u, uptime=%ums)\n",
+                ESP_LOGI(TAG, "Measured Hz -> GPS: %.1f, IMU: %.1f, Overall: %.1f Hz (samples=%u, uptime=%ums)",
                              gps_hz, imu_hz, overall_hz, m_sample_count, loop_start_ms);
-                // Serial.flush() removed - blocks Core 1 for 10-50ms per call
             }
             gps_updates = 0;
             imu_updates = 0;
@@ -264,14 +265,12 @@ void RTLoggerThread::task_loop() {
 
 void RTLoggerThread::pause_storage() {
     m_storage_paused = true;
-    Serial.println("[RTLogger] Storage paused");
-    Serial.flush();
+    ESP_LOGI(TAG, "Storage paused");
 }
 
 void RTLoggerThread::resume_storage() {
     m_storage_paused = false;
-    Serial.println("[RTLogger] Storage resumed");
-    Serial.flush();
+    ESP_LOGI(TAG, "Storage resumed");
 }
 
 bool RTLoggerThread::is_storage_paused() const {
@@ -280,6 +279,5 @@ bool RTLoggerThread::is_storage_paused() const {
 
 void RTLoggerThread::mark_event() {
     m_mark_event = true;
-    Serial.println("[RTLogger] Event marked");
-    Serial.flush();
+    ESP_LOGI(TAG, "Event marked");
 }

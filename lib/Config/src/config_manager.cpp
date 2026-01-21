@@ -13,6 +13,7 @@ const char* ConfigManager::KEY_GPS_HZ = "gps_hz";
 const char* ConfigManager::KEY_IMU_HZ = "imu_hz";
 const char* ConfigManager::KEY_OBD_HZ = "obd_hz";
 const char* ConfigManager::KEY_OBD_BLE_ENABLED = "obd_ble_en";
+const char* ConfigManager::KEY_LOG_LEVEL = "log_level";
 const char* ConfigManager::KEY_NET_SSID = "net_ssid";
 const char* ConfigManager::KEY_NET_PASSWORD = "net_password";
 const char* ConfigManager::KEY_NET_IP = "net_ip";
@@ -61,6 +62,7 @@ logging_config_t ConfigManager::load() {
     config.imu_hz = prefs.getUShort(KEY_IMU_HZ, 10);
     config.obd_hz = prefs.getUShort(KEY_OBD_HZ, 10);
     config.obd_ble_enabled = prefs.getBool(KEY_OBD_BLE_ENABLED, true);
+    config.log_level = prefs.getUChar(KEY_LOG_LEVEL, 3);  // Default: INFO
     
     // Load network configuration with safety checks
     size_t ssid_len = prefs.getString(KEY_NET_SSID, config.network.ssid, sizeof(config.network.ssid));
@@ -130,6 +132,7 @@ bool ConfigManager::save(const logging_config_t& config) {
     prefs.putUShort(KEY_IMU_HZ, config.imu_hz);
     prefs.putUShort(KEY_OBD_HZ, config.obd_hz);
     prefs.putBool(KEY_OBD_BLE_ENABLED, config.obd_ble_enabled);
+    prefs.putUChar(KEY_LOG_LEVEL, config.log_level);
     
     // Save network configuration
     prefs.putString(KEY_NET_SSID, config.network.ssid);

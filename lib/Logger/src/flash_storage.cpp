@@ -4,6 +4,9 @@
 #include <esp_random.h>
 #include <esp_mac.h>
 #include <string.h>
+#include <esp_log.h>
+
+static const char* TAG = "FlashStorage";
 
 FlashStorage::FlashStorage()
     : m_partition(nullptr), m_nvs_handle(0),
@@ -22,7 +25,7 @@ FlashStorage::~FlashStorage() {
 }
 
 bool FlashStorage::begin(RTCManager* rtc_manager) {
-    Serial.println("[FlashStorage] Initializing...");
+    ESP_LOGI(TAG, "Initializing...");
     
     // Restore system time from RTC or NVS if available
     if (rtc_manager != nullptr) {
@@ -37,18 +40,18 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
     );
     
     if (!m_partition) {
-        Serial.println("[FlashStorage] ERROR: Storage partition not found!");
+        ESP_LOGE(TAG, "Storage partition not found!");
         return false;
     }
     
     m_partition_size = m_partition->size;
-    Serial.printf("[FlashStorage] Found partition: size=%d bytes (%.2f MB)\n",
+    ESP_LOGI(TAG, "Found partition: size=%d bytes (%.2f MB)",
                   m_partition_size, m_partition_size / (1024.0f * 1024.0f));
     
     // Open NVS for offset tracking
     esp_err_t err = nvs_open("storage", NVS_READWRITE, &m_nvs_handle);
     if (err != ESP_OK) {
-        Serial.printf("[FlashStorage] ERROR: Failed to open NVS: %d\n", err);
+        ESP_LOGE(TAG, "Failed to open NVS: %d", err);
         return false;
     }
     
@@ -56,10 +59,10 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
     size_t saved_offset = 0;
     err = nvs_get_u32(m_nvs_handle, "write_offset", (uint32_t*)&saved_offset);
     if (err == ESP_OK) {
-        Serial.printf("[FlashStorage] Loaded offset from NVS: %d\n", saved_offset);
+        ESP_LOGI(TAG, "Loaded offset from NVS: %d", saved_offset);
         m_write_offset = saved_offset;
     } else {
-        Serial.println("[FlashStorage] Starting fresh (no saved offset)");
+        ESP_LOGI(TAG, "Starting fresh (no saved offset)");
         m_write_offset = 0;
     }
     
@@ -95,13 +98,12 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
     nvs_commit(m_nvs_handle);
     m_session_header.startup_counter = counter;
     
-    Serial.printf("[FlashStorage] Session UUID: ");
-    for (int i = 0; i < 16; i++) {
-        Serial.printf("%02x", m_startup_id[i]);
-        if (i == 3 || i == 5 || i == 7 || i == 9) Serial.print("-");
-    }
-    Serial.println();
-    Serial.printf("[FlashStorage] RTC available: %d\n", m_session_header.rtc_available);
+    ESP_LOGI(TAG, "Session UUID: %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+             m_startup_id[0], m_startup_id[1], m_startup_id[2], m_startup_id[3],
+             m_startup_id[4], m_startup_id[5], m_startup_id[6], m_startup_id[7],
+             m_startup_id[8], m_startup_id[9], m_startup_id[10], m_startup_id[11],
+             m_startup_id[12], m_startup_id[13], m_startup_id[14], m_startup_id[15]);
+    ESP_LOGI(TAG, "RTC available: %d", m_session_header.rtc_available);
     
     // Write session header to flash
     write_session_header();
@@ -109,7 +111,7 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
     // Create sample queue
     m_sample_queue = xQueueCreate(QUEUE_SIZE, sizeof(SampleData));
     if (!m_sample_queue) {
-        Serial.println("[FlashStorage] ERROR: Failed to create queue!");
+        ESP_LOGE(TAG, "Failed to create queue!");
         return false;
     }
     
@@ -128,18 +130,18 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
     );
     
     if (result != pdPASS) {
-        Serial.println("[FlashStorage] ERROR: Failed to create writer task!");
+        ESP_LOGE(TAG, "Failed to create writer task!");
         m_running = false;
         return false;
     }
     
-    Serial.println("[FlashStorage] Started successfully on Core 0 (blocking flash ops isolated from Core 1 sensors)");
+    ESP_LOGI(TAG, "Started successfully on Core 0 (blocking flash ops isolated from Core 1 sensors)");
     return true;
 }
 
 void FlashStorage::end() {
     if (m_running) {
-        Serial.println("[FlashStorage] Stopping...");
+        ESP_LOGI(TAG, "Stopping...");
         
         // Flush any pending data
         flush_block();
@@ -163,8 +165,8 @@ void FlashStorage::end() {
             nvs_close(m_nvs_handle);
             m_nvs_handle = 0;
         }
-        
-        Serial.println("[FlashStorage] Stopped");
+
+        ESP_LOGI(TAG, "Stopped");
     }
 }
 
@@ -187,7 +189,7 @@ void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel
             m_queue_overruns++;
             // Warn on first overrun, then every 100 overruns
             if (m_queue_overruns == 1 || m_queue_overruns % 100 == 0) {
-                Serial.printf("[FlashStorage] WARNING: Queue overrun! Dropped %u samples (Core 0 can't drain fast enough)\n",
+                ESP_LOGW(TAG, "Queue overrun! Dropped %u samples (Core 0 can't drain fast enough)",
                               m_queue_overruns);
             }
             return false;
@@ -225,7 +227,7 @@ void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel
             // This is simplified - real impl would parse GPS date/time properly
             // For now, just use current system time when GPS lock occurs
             m_session_header.gps_utc_at_lock = time(nullptr);
-            Serial.printf("[FlashStorage] GPS lock acquired\n");
+            ESP_LOGI(TAG, "GPS lock acquired");
         }
         
         sample.type = 0x04;  // SAMPLE_GPS
@@ -271,7 +273,7 @@ void FlashStorage::queue_obd_sample(const obd_data_t& obd) {
             m_queue_overruns++;
             // Warn on first overrun, then every 100 overruns
             if (m_queue_overruns == 1 || m_queue_overruns % 100 == 0) {
-                Serial.printf("[FlashStorage] WARNING: Queue overrun! Dropped %u samples (Core 0 can't drain fast enough)\n",
+                ESP_LOGW(TAG, "Queue overrun! Dropped %u samples (Core 0 can't drain fast enough)",
                               m_queue_overruns);
             }
             return false;
@@ -292,15 +294,15 @@ void FlashStorage::queue_obd_sample(const obd_data_t& obd) {
 }
 
 void FlashStorage::pause() {
-    Serial.println("[FlashStorage] Pausing writes...");
+    ESP_LOGI(TAG, "Pausing writes...");
     m_paused = true;
-    
+
     // Flush pending block
     flush_block();
 }
 
 void FlashStorage::resume() {
-    Serial.println("[FlashStorage] Resuming writes...");
+    ESP_LOGI(TAG, "Resuming writes...");
     m_paused = false;
 }
 
@@ -312,8 +314,8 @@ void FlashStorage::writer_task_wrapper(void* arg) {
 }
 
 void FlashStorage::writer_task_loop() {
-    Serial.println("[FlashStorage] Writer task started on Core 0 - draining PSRAM queue to flash");
-    Serial.printf("[FlashStorage] Queue buffer: %u samples (~%.1f seconds at 10Hz)\n",
+    ESP_LOGI(TAG, "Writer task started on Core 0 - draining PSRAM queue to flash");
+    ESP_LOGI(TAG, "Queue buffer: %u samples (~%.1f seconds at 10Hz)",
                   QUEUE_SIZE, QUEUE_SIZE / 10.0f);
 
     SampleData sample;
@@ -390,18 +392,18 @@ void FlashStorage::writer_task_loop() {
             UBaseType_t queue_available = uxQueueSpacesAvailable(m_sample_queue);
             float queue_usage_pct = (queue_waiting * 100.0f) / QUEUE_SIZE;
 
-            Serial.printf("[FlashStorage] Queue health: %u/%u used (%.1f%%), %u overruns, %u queued\n",
+            ESP_LOGI(TAG, "Queue health: %u/%u used (%.1f%%), %u overruns, %u queued",
                           queue_waiting, QUEUE_SIZE, queue_usage_pct, m_queue_overruns, m_samples_queued);
 
             if (queue_usage_pct > 80.0f) {
-                Serial.printf("[FlashStorage] WARNING: Queue >80%% full! Core 0 struggling to keep up with Core 1\n");
+                ESP_LOGW(TAG, "Queue >80%% full! Core 0 struggling to keep up with Core 1");
             }
 
             last_health_check = now_ms;
         }
     }
-    
-    Serial.println("[FlashStorage] Writer task exiting");
+
+    ESP_LOGI(TAG, "Writer task exiting");
 }
 
 void FlashStorage::flush_block() {
@@ -433,7 +435,7 @@ void FlashStorage::flush_block() {
     
     // Check if we need to wrap around
     if (m_write_offset + total_size > m_partition_size) {
-        Serial.println("[FlashStorage] Wrapping circular buffer...");
+        ESP_LOGI(TAG, "Wrapping circular buffer...");
         m_write_offset = sizeof(session_start_header_t);  // Start after session header
     }
     
@@ -451,7 +453,7 @@ void FlashStorage::flush_block() {
     esp_err_t err = esp_partition_write(m_partition, m_write_offset,
                                        &block_header, sizeof(log_block_header_t));
     if (err != ESP_OK) {
-        Serial.printf("[FlashStorage] ERROR: Failed to write block header: %d\n", err);
+        ESP_LOGE(TAG, "Failed to write block header: %d", err);
         m_sample_buffer_pos = 0;
         return;
     }
@@ -462,7 +464,7 @@ void FlashStorage::flush_block() {
     err = esp_partition_write(m_partition, m_write_offset,
                              data_to_write, data_size);
     if (err != ESP_OK) {
-        Serial.printf("[FlashStorage] ERROR: Failed to write payload: %d\n", err);
+        ESP_LOGE(TAG, "Failed to write payload: %d", err);
         m_sample_buffer_pos = 0;
         return;
     }
@@ -480,7 +482,7 @@ void FlashStorage::flush_block() {
     // Debug output (throttled)
     static uint32_t last_debug = 0;
     if (millis() - last_debug > 10000) {
-        Serial.printf("[FlashStorage] Wrote block: %d bytes (uncompressed), offset=%d\n",
+        ESP_LOGI(TAG, "Wrote block: %d bytes (uncompressed), offset=%d",
                      total_size, m_write_offset);
         last_debug = millis();
     }
@@ -502,12 +504,12 @@ void FlashStorage::write_session_header() {
     esp_err_t err = esp_partition_write(m_partition, 0,
                                        &m_session_header, sizeof(session_start_header_t));
     if (err != ESP_OK) {
-        Serial.printf("[FlashStorage] ERROR: Failed to write session header: %d\n", err);
+        ESP_LOGE(TAG, "Failed to write session header: %d", err);
         return;
     }
-    
+
     m_write_offset = sizeof(session_start_header_t);
-    Serial.printf("[FlashStorage] Wrote session header at offset 0, next write at %d\n", m_write_offset);
+    ESP_LOGI(TAG, "Wrote session header at offset 0, next write at %d", m_write_offset);
 }
 
 void FlashStorage::save_offset_to_nvs() {
@@ -529,10 +531,10 @@ size_t FlashStorage::read_flash(size_t offset, uint8_t* buffer, size_t size) {
     
     esp_err_t err = esp_partition_read(m_partition, offset, buffer, to_read);
     if (err != ESP_OK) {
-        Serial.printf("[FlashStorage] ERROR: Read failed at offset %d: %d\n", offset, err);
+        ESP_LOGE(TAG, "Read failed at offset %d: %d", offset, err);
         return 0;
     }
-    
+
     return to_read;
 }
 
