@@ -57,7 +57,11 @@ struct logging_config_t {
     bool obd_ble_enabled;   // Enable/disable BLE scanning for OBD-II devices
 
     // Log level (0=NONE, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG, 5=VERBOSE)
-    uint8_t log_level;      // Default: INFO (3)
+    uint8_t log_level;      // Global default log level: INFO (3)
+
+    // Per-module log levels (TAG name → log level)
+    // Allows fine-grained control: {"GPS": 4, "OBD-BLE": 0, "FlashStorage": 2}
+    std::map<String, uint8_t> module_log_levels;
 
     // Network configuration
     network_config_t network;
@@ -83,6 +87,20 @@ struct logging_config_t {
         // Initialize mandatory PIDs (enabled by default at lower rates)
         pid_configs[0x03] = pid_config_t(0x03, 1, true, "Fuel System Status");
         pid_configs[0x04] = pid_config_t(0x04, 5, true, "Engine Load");
+
+        // Initialize per-module log levels (all inherit global by default)
+        // These can be overridden via web UI for fine-grained control
+        module_log_levels["MAIN"] = 3;         // Main loop: INFO
+        module_log_levels["GPS"] = 3;          // GPS driver: INFO
+        module_log_levels["IMU"] = 3;          // IMU driver: INFO
+        module_log_levels["RTLogger"] = 3;     // RT Logger thread: INFO
+        module_log_levels["STATUS"] = 3;       // Status Monitor: INFO
+        module_log_levels["FlashStorage"] = 3; // Flash writer: INFO
+        module_log_levels["OBD-BLE"] = 3;      // BLE OBD driver: INFO
+        module_log_levels["WiFi"] = 2;         // WiFi: WARN (less verbose)
+        module_log_levels["Config"] = 3;       // Config manager: INFO
+        module_log_levels["TimeSync"] = 2;     // Time sync: WARN
+        module_log_levels["LogFileMgr"] = 3;   // Log file manager: INFO
     }
 };
 
@@ -133,6 +151,13 @@ public:
      * @return true if valid
      */
     static bool validate(const logging_config_t& config);
+
+    /**
+     * @brief Apply log levels from configuration
+     * Sets ESP-IDF log levels for all modules based on config
+     * @param config Configuration containing log levels
+     */
+    static void apply_log_levels(const logging_config_t& config);
     
     /**
      * @brief Reset to default configuration

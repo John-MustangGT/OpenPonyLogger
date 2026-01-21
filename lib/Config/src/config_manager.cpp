@@ -237,3 +237,28 @@ uint32_t ConfigManager::calculate_checksum(const logging_config_t& config) {
     // Calculate CRC32 checksum
     return esp_crc32_le(0, (uint8_t*)&data, sizeof(data));
 }
+
+void ConfigManager::apply_log_levels(const logging_config_t& config) {
+    // Map config levels (0-5) to ESP-IDF log levels
+    const esp_log_level_t level_map[] = {
+        ESP_LOG_NONE,    // 0
+        ESP_LOG_ERROR,   // 1
+        ESP_LOG_WARN,    // 2
+        ESP_LOG_INFO,    // 3
+        ESP_LOG_DEBUG,   // 4
+        ESP_LOG_VERBOSE  // 5
+    };
+
+    // Apply global default log level to all modules
+    esp_log_level_t global_level = level_map[config.log_level > 5 ? 3 : config.log_level];
+    esp_log_level_set("*", global_level);
+
+    // Apply per-module log levels (overrides global default)
+    for (const auto& entry : config.module_log_levels) {
+        uint8_t level = entry.second > 5 ? 3 : entry.second;
+        esp_log_level_set(entry.first.c_str(), level_map[level]);
+    }
+
+    ESP_LOGI("Config", "Applied log levels: global=%d, modules=%zu",
+             config.log_level, config.module_log_levels.size());
+}

@@ -286,14 +286,17 @@ void setup() {
     uint32_t gps_ms = 1000 / config.gps_hz;
     uint32_t imu_ms = 1000 / config.imu_hz;
     uint32_t obd_ms = 1000 / config.obd_hz;
-    
+
+    // Apply log levels from configuration
+    ConfigManager::apply_log_levels(config);
+    ESP_LOGI(TAG, "✓ Configuration loaded and log levels applied (global=%d, modules=%zu)",
+             config.log_level, config.module_log_levels.size());
+
     // Initialize sensors
-    Serial.println("About to call init_sensors()");
-    Serial.flush();
+    ESP_LOGI(TAG, "▶ Initializing sensors...");
     if (!init_sensors()) {
-        Serial.println("✗ FATAL ERROR: Sensor initialization failed!");
-        Serial.println("System halted.");
-        Serial.flush();
+        ESP_LOGE(TAG, "✗ FATAL ERROR: Sensor initialization failed!");
+        ESP_LOGE(TAG, "System halted.");
         while (1) {
             delay(1000);
         }

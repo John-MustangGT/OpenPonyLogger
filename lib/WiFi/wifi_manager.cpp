@@ -179,6 +179,7 @@ void WiFiManager::handle_config_get(AsyncWebServerRequest* request) {
     doc["imu_hz"] = config.imu_hz;
     doc["obd_hz"] = config.obd_hz;
     doc["obd_ble_enabled"] = config.obd_ble_enabled;
+    doc["log_level"] = config.log_level;
 
     // Add network configuration with null-termination safety
     JsonObject network = doc["network"].to<JsonObject>();
@@ -210,6 +211,12 @@ void WiFiManager::handle_config_get(AsyncWebServerRequest* request) {
         }
     }
 
+    // Add per-module log levels
+    JsonObject module_log_levels = doc["module_log_levels"].to<JsonObject>();
+    for (const auto& entry : config.module_log_levels) {
+        module_log_levels[entry.first] = entry.second;
+    }
+
     String json_str;
     serializeJson(doc, json_str);
 
@@ -235,7 +242,23 @@ void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* da
     config.imu_hz = doc["imu_hz"] | 10;
     config.obd_hz = doc["obd_hz"] | 10;
     config.obd_ble_enabled = doc["obd_ble_enabled"] | true;
-    
+
+    // Parse log level if provided
+    if (doc.containsKey("log_level")) {
+        config.log_level = doc["log_level"] | 3;
+    }
+
+    // Parse per-module log levels if provided
+    if (doc.containsKey("module_log_levels")) {
+        JsonObject module_levels = doc["module_log_levels"];
+        config.module_log_levels.clear();
+        for (JsonPair kv : module_levels) {
+            String module_name = kv.key().c_str();
+            uint8_t level = kv.value().as<uint8_t>();
+            config.module_log_levels[module_name] = level;
+        }
+    }
+
     // Parse network configuration if provided
     if (doc.containsKey("network")) {
         JsonObject network = doc["network"];
@@ -262,11 +285,18 @@ void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* da
     }
     
     bool success = ConfigManager::update(config);
-    
-    String response = success ? 
+
+    // Apply log levels immediately without restart
+    if (success) {
+        ConfigManager::apply_log_levels(config);
+        ESP_LOGI(TAG, "Log levels applied: global=%d, modules=%zu",
+                 config.log_level, config.module_log_levels.size());
+    }
+
+    String response = success ?
         "{\"success\":true,\"message\":\"Configuration saved\"}" :
         "{\"success\":false,\"error\":\"Validation failed\"}";
-    
+
     request->send(success ? 200 : 400, "application/json", response);
 }
 

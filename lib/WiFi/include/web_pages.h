@@ -304,7 +304,194 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                         </tbody>
                     </table>
                 </div>
-                
+
+                <div class="config-section">
+                    <h3>Logging Configuration</h3>
+                    <p style="color: #aaa; font-size: 13px; margin-bottom: 15px;">Control debug output verbosity. Changes take effect immediately without restart.</p>
+
+                    <div class="form-group">
+                        <label for="log-level">Global Log Level</label>
+                        <select id="log-level" name="log_level">
+                            <option value="0">NONE - No logging</option>
+                            <option value="1">ERROR - Only errors</option>
+                            <option value="2">WARN - Warnings and errors</option>
+                            <option value="3" selected>INFO - General information (recommended)</option>
+                            <option value="4">DEBUG - Detailed debug info</option>
+                            <option value="5">VERBOSE - All debug output</option>
+                        </select>
+                        <div style="color: #888; font-size: 12px; margin-top: 5px;">Global default level for all modules. Per-module overrides can be set below.</div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <h4 style="color: #aaa; margin-bottom: 10px; font-size: 14px;">Per-Module Log Levels</h4>
+                        <table class="pid-table">
+                            <thead>
+                                <tr>
+                                    <th>Module</th>
+                                    <th>Log Level</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="pid-name">MAIN</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="MAIN" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2">WARN</option>
+                                            <option value="3" selected>INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">Main setup and initialization</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">RTLogger</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="RTLogger" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2">WARN</option>
+                                            <option value="3" selected>INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">Core 1 sensor acquisition</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">STATUS</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="STATUS" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2">WARN</option>
+                                            <option value="3" selected>INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">Status monitoring and buttons</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">FlashStorage</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="FlashStorage" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2">WARN</option>
+                                            <option value="3" selected>INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">Flash storage and queue</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">GPS</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="GPS" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2">WARN</option>
+                                            <option value="3" selected>INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">GPS driver and NMEA parsing</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">IMU</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="IMU" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2">WARN</option>
+                                            <option value="3" selected>INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">IMU sensor driver</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">OBD-BLE</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="OBD-BLE" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2">WARN</option>
+                                            <option value="3" selected>INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">BLE OBD-II driver</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">WiFi</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="WiFi" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2" selected>WARN</option>
+                                            <option value="3">INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">WiFi and WebSocket</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">Config</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="Config" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2">WARN</option>
+                                            <option value="3" selected>INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">Configuration manager</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">TimeSync</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="TimeSync" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2" selected>WARN</option>
+                                            <option value="3">INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">Time synchronization</td>
+                                </tr>
+                                <tr>
+                                    <td class="pid-name">LogFileMgr</td>
+                                    <td>
+                                        <select class="module-log-level" data-module="LogFileMgr" style="width: 100%;">
+                                            <option value="0">NONE</option>
+                                            <option value="1">ERROR</option>
+                                            <option value="2">WARN</option>
+                                            <option value="3" selected>INFO</option>
+                                            <option value="4">DEBUG</option>
+                                            <option value="5">VERBOSE</option>
+                                        </select>
+                                    </td>
+                                    <td class="pid-category">Download and file management</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <button type="submit" id="save-btn">Save Configuration</button>
                 <button type="button" id="restart-btn" onclick="restartDevice()" style="background: #ff6b6b; margin-left: 10px;">Restart Device</button>
                 <div id="config-status" class="status-message"></div>
@@ -581,6 +768,21 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                         }
                     });
                 }
+
+                // Load log level configuration if present
+                if (config.log_level !== undefined) {
+                    document.getElementById('log-level').value = config.log_level;
+                }
+
+                // Load per-module log levels if present
+                if (config.module_log_levels) {
+                    document.querySelectorAll('.module-log-level').forEach(select => {
+                        const module = select.getAttribute('data-module');
+                        if (config.module_log_levels[module] !== undefined) {
+                            select.value = config.module_log_levels[module];
+                        }
+                    });
+                }
             } catch (e) {
                 showStatus('config-status', 'Failed to load configuration', 'error');
             }
@@ -598,14 +800,23 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 imu_hz: parseInt(document.getElementById('imu-hz').value),
                 obd_hz: parseInt(document.getElementById('obd-hz').value),
                 obd_ble_enabled: document.getElementById('obd-ble-enabled').checked,
+                log_level: parseInt(document.getElementById('log-level').value),
                 network: {
                     ssid: document.getElementById('net-ssid').value,
                     password: document.getElementById('net-password').value,
                     ip: document.getElementById('net-ip').value,
                     subnet: document.getElementById('net-subnet').value
                 },
-                pids: []
+                pids: [],
+                module_log_levels: {}
             };
+
+            // Collect per-module log levels
+            document.querySelectorAll('.module-log-level').forEach(select => {
+                const module = select.getAttribute('data-module');
+                const level = parseInt(select.value);
+                config.module_log_levels[module] = level;
+            });
             
             // Collect PID configurations
             document.querySelectorAll('#pid-table-body tr').forEach(row => {
