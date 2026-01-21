@@ -112,7 +112,8 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
         return false;
     }
     
-    // Start writer task on Core 0 with low priority
+    // Start writer task on Core 1 with low priority
+    // Flash writes are blocking operations that starve Core 0's BLE/WiFi stack
     m_running = true;
     BaseType_t result = xTaskCreatePinnedToCore(
         writer_task_wrapper,
@@ -121,7 +122,7 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
         this,              // Parameter
         1,                 // Priority (low)
         &m_writer_task,
-        0                  // Core 0
+        1                  // Core 1 - moved from Core 0 to reduce starvation
     );
     
     if (result != pdPASS) {
@@ -130,7 +131,7 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
         return false;
     }
     
-    Serial.println("[FlashStorage] Started successfully on Core 0");
+    Serial.println("[FlashStorage] Started successfully on Core 1");
     return true;
 }
 
@@ -258,7 +259,7 @@ void FlashStorage::writer_task_wrapper(void* arg) {
 }
 
 void FlashStorage::writer_task_loop() {
-    Serial.println("[FlashStorage] Writer task started on Core 0");
+    Serial.println("[FlashStorage] Writer task started on Core 1");
     
     SampleData sample;
     TickType_t last_flush = xTaskGetTickCount();

@@ -49,7 +49,7 @@ SensorManager sensor_manager;
 RTLoggerThread* rt_logger = nullptr;
 StatusMonitor* status_monitor = nullptr;
 StorageReporter reporter;
-FlashStorage* flash_storage = nullptr;  // Flash partition writer (Core 0)
+FlashStorage* flash_storage = nullptr;  // Flash partition writer (Core 1)
 RTCManager* rtc_manager = nullptr;      // Real-time clock manager
 TimeUpdateTask* time_updater = nullptr; // Low-priority GPS time sync task
 
@@ -78,7 +78,7 @@ void on_storage_write(const gps_data_t& gps, const accel_data_t& accel,
     // Get OBD data from sensor manager
     obd_data_t obd = sensor_manager.get_obd();
     
-    // Write to flash storage (Core 0 task)
+    // Write to flash storage (Core 1 task)
     if (flash_storage != nullptr) {
         flash_storage->write_sample(gps, accel, gyro, compass, battery, obd);
     }
@@ -391,7 +391,7 @@ void setup() {
         Serial.flush();
     }
     
-    // Initialize flash storage (Core 0 writer task)
+    // Initialize flash storage (Core 1 writer task)
     Serial.println("\n▶ Initializing Flash Storage...");
     Serial.flush();
     flash_storage = new FlashStorage();

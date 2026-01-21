@@ -217,9 +217,30 @@ void RTLoggerThread::task_loop() {
                 doc["battery_voltage"] = m_last_battery.voltage;
                 doc["battery_current"] = m_last_battery.current;
                 doc["battery_temp"] = m_last_battery.temperature / 100.0f;
-                
+
+                // OBD data (if connected)
+                JsonObject obd_obj = doc["obd"].to<JsonObject>();
+                bool obd_connected = IcarBleDriver::is_connected();
+                obd_obj["connected"] = obd_connected;
+                if (obd_connected) {
+                    obd_data_t obd = m_sensor_manager->get_obd();
+                    obd_obj["rpm"] = obd.engine_rpm;
+                    obd_obj["speed_kph"] = obd.vehicle_speed;
+                    obd_obj["coolant_temp"] = obd.coolant_temp;
+                    obd_obj["throttle_pos"] = obd.throttle_position;
+                    obd_obj["engine_load"] = obd.engine_load;
+                    obd_obj["intake_temp"] = obd.intake_temp;
+                } else {
+                    obd_obj["rpm"] = nullptr;
+                    obd_obj["speed_kph"] = nullptr;
+                    obd_obj["coolant_temp"] = nullptr;
+                    obd_obj["throttle_pos"] = nullptr;
+                    obd_obj["engine_load"] = nullptr;
+                    obd_obj["intake_temp"] = nullptr;
+                }
+
                 // Serialize and broadcast
-                char json_buffer[512];
+                char json_buffer[768];  // Increased from 512 to accommodate OBD data
                 size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
                 if (n > 0) {
                     WiFiManager::broadcast_json(json_buffer);

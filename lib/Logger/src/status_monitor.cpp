@@ -351,136 +351,26 @@ void StatusMonitor::task_loop() {
         }
 
         // Drive BLE scanning/connection from Core 0 to avoid NimBLE crashes on other cores
+        // Reduced from 5Hz to 2Hz to minimize Core 0 blocking during BLE operations
         static uint32_t last_obd_update = 0;
-        if (now - last_obd_update >= 200) { // 5 Hz on Core 0
+        if (now - last_obd_update >= 500) { // 2 Hz on Core 0 (reduced from 5Hz)
             IcarBleDriver::update();
             last_obd_update = now;
+            // Yield after BLE update as it can be blocking
+            vTaskDelay(pdMS_TO_TICKS(1));
         }
         
         // Yield to watchdog to prevent TWDT reset on Core 0
         vTaskDelay(pdMS_TO_TICKS(1));
         yield_count++;
+
+        // NOTE: WebSocket broadcasts removed from StatusMonitor to reduce Core 0 load.
+        // RTLoggerThread on Core 1 handles all WebSocket broadcasts at 5Hz (200ms interval).
+        // This eliminates duplicate broadcasts and moves JSON serialization off Core 0.
         
-        // Broadcast sensor data via WebSocket at 2Hz (every 500ms)
-        // Only when clients are connected to minimize overhead
-        static uint32_t last_ws_broadcast_ms = 0;
-        static uint32_t last_config_check_ms = 0;
-        static bool obd_ble_enabled = true;
-        
-        // Update OBD BLE enabled state every 5 seconds
-        if (now - last_config_check_ms >= 5000) {
-            obd_ble_enabled = ConfigManager::get_current().obd_ble_enabled;
-            last_config_check_ms = now;
-        }
-        
-        if (WiFiManager::is_initialized() && WiFiManager::has_clients() && 
-            (now - last_ws_broadcast_ms) >= 500) {
-            last_ws_broadcast_ms = now;
-            broadcast_count++;
-            
-            if (m_rt_logger != nullptr) {
-                // Get latest sensor data
-                gps_data_t gps = m_rt_logger->get_last_gps();
-                accel_data_t accel = m_rt_logger->get_last_accel();
-                gyro_data_t gyro = m_rt_logger->get_last_gyro();
-                battery_data_t battery = m_rt_logger->get_last_battery();
-                uint32_t sample_count = m_rt_logger->get_sample_count();
-                bool is_paused = m_rt_logger->is_storage_paused();
-                
-                if (DebugFlags::ENABLE_WEBSOCKET_DEBUG) {
-                    Serial.printf("[StatusMonitor] Broadcast #%u: JSON encoding + WebSocket send (clients=%d, obd_enabled=%d)\n", 
-                        broadcast_count, WiFiManager::get_client_count(), obd_ble_enabled);
-                }
-                
-                // Create JSON document with sensor data
-                JsonDocument doc;
-                doc["type"] = "sensor";
-                doc["uptime_ms"] = now;
-                doc["sample_count"] = sample_count;
-                doc["is_paused"] = is_paused;
-                
-                // GPS data
-                doc["gps_valid"] = gps.valid;
-                doc["latitude"] = gps.latitude;
-                doc["longitude"] = gps.longitude;
-                doc["altitude"] = gps.altitude;
-                doc["speed"] = gps.speed;
-                doc["satellites"] = gps.satellites;
-                
-                // Accelerometer
-                doc["accel_x"] = accel.x;
-                doc["accel_y"] = accel.y;
-                doc["accel_z"] = accel.z;
-                doc["temperature"] = accel.temperature;
-                
-                // Gyroscope
-                doc["gyro_x"] = gyro.x;
-                doc["gyro_y"] = gyro.y;
-                doc["gyro_z"] = gyro.z;
-                
-                // Battery data
-                doc["battery_soc"] = battery.state_of_charge;
-                doc["battery_voltage"] = battery.voltage;
-                doc["battery_current"] = battery.current;
-                doc["battery_temp"] = battery.temperature / 100.0f;
-                
-                // OBD data (if connected and enabled)
-                // NOTE: Skip OBD data fetch during JSON broadcast to avoid Core 0 watchdog starvation.
-                // BLE I/O is blocking and can prevent idle task from running. OBD data is available
-                // through sensor_manager callback during storage writes; WebSocket clients can check
-                // is_connected() flag without fetching full data every 5s.
-                bool obd_available = false;
-                if (obd_ble_enabled) {
-                    try {
-                        obd_available = IcarBleDriver::is_connected();
-                        if (DebugFlags::ENABLE_OBD_DEBUG) {
-                            Serial.printf("[StatusMonitor] OBD status check: connected=%d\n", obd_available);
-                        }
-                    } catch (...) {
-                        obd_available = false;
-                        if (DebugFlags::ENABLE_OBD_DEBUG) {
-                            Serial.println("[StatusMonitor] OBD status check FAILED (exception)");
-                        }
-                    }
-                }
-                
-                // Initialize OBD object in JSON (always present, even if not connected)
-                JsonObject obd_obj = doc["obd"].to<JsonObject>();
-                
-                // Include OBD status and PIDs if connected
-                if (obd_ble_enabled && obd_available) {
-                    obd_obj["connected"] = true;
-                    obd_data_t obd = m_rt_logger->get_sensor_manager()->get_obd();
-                    obd_obj["rpm"] = obd.engine_rpm;
-                    obd_obj["speed_kph"] = obd.vehicle_speed;
-                    obd_obj["coolant_temp"] = obd.coolant_temp;
-                    obd_obj["throttle_pos"] = obd.throttle_position;
-                    obd_obj["engine_load"] = obd.engine_load;
-                    obd_obj["intake_temp"] = obd.intake_temp;
-                } else {
-                    obd_obj["connected"] = false;
-                    obd_obj["rpm"] = nullptr;
-                    obd_obj["speed_kph"] = nullptr;
-                    obd_obj["coolant_temp"] = nullptr;
-                    obd_obj["throttle_pos"] = nullptr;
-                    obd_obj["engine_load"] = nullptr;
-                    obd_obj["intake_temp"] = nullptr;
-                }
-                
-                // Serialize and broadcast
-                static EXT_RAM_ATTR char json_buffer[768];
-                size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
-                if (n > 0 && n < sizeof(json_buffer)) {
-                    WiFiManager::broadcast_json(json_buffer);
-                    // Yield after broadcast to feed watchdog during potential WebSocket I/O
-                    vTaskDelay(pdMS_TO_TICKS(1));
-                }
-            }
-        }
-        
-        // Update display every 2 seconds (independent of debug flags)
+        // Update display every 4 seconds (reduced from 2s to minimize Core 0 load)
         static uint32_t last_display_update = 0;
-        if (m_rt_logger != nullptr && now - last_display_update >= 2000) {
+        if (m_rt_logger != nullptr && now - last_display_update >= 4000) {
             DisplayMode current_mode = ST7789Display::get_display_mode();
             bool is_paused = m_rt_logger->is_storage_paused();
             
@@ -519,21 +409,27 @@ void StatusMonitor::task_loop() {
                 ST7789Display::show_info_screen("192.168.4.1", "OpenPonyLogger");
             }
             // DisplayMode::DARK - do nothing
-            
+
             last_display_update = now;
+
+            // Yield after display update to prevent watchdog starvation
+            vTaskDelay(pdMS_TO_TICKS(1));
         }
         
-        // Print status at regular intervals
+        // Print status at regular intervals (rate-limited to reduce Core 0 serial overhead)
         if (now - m_last_report_time >= m_report_interval_ms) {
-            // Show sensor sample counts at 1Hz
-            if (DebugFlags::ENABLE_SAMPLE_COUNTS && m_rt_logger != nullptr) {
+            // Show sensor sample counts - rate limited to every 10 seconds instead of 1Hz
+            static uint32_t last_sample_count_print = 0;
+            if (DebugFlags::ENABLE_SAMPLE_COUNTS && m_rt_logger != nullptr &&
+                now - last_sample_count_print >= 10000) {
                 uint32_t gps_samples = m_rt_logger->get_gps_sample_count();
                 uint32_t accel_samples = m_rt_logger->get_accel_sample_count();
                 uint32_t gyro_samples = m_rt_logger->get_gyro_sample_count();
                 uint32_t obd_samples = m_rt_logger->get_obd_sample_count();
                 bool is_paused = m_rt_logger->is_storage_paused();
-                Serial.printf("[1Hz] GPS:%u IMU:%u Gyro:%u OBD:%u | Paused:%d | Heap:%u\n",
+                Serial.printf("[10s] GPS:%u IMU:%u Gyro:%u OBD:%u | Paused:%d | Heap:%u\n",
                     gps_samples, accel_samples, gyro_samples, obd_samples, is_paused, ESP.getFreeHeap());
+                last_sample_count_print = now;
             }
             
             // Full status report if enabled
@@ -541,6 +437,8 @@ void StatusMonitor::task_loop() {
                 Serial.printf("[StatusMonitor] STATUS REPORT #%u (loops=%u, broadcasts=%u, yields=%u)\n",
                     m_write_count, loop_count, broadcast_count, yield_count);
                 print_status_now();
+                // Yield after large serial output to prevent blocking
+                vTaskDelay(pdMS_TO_TICKS(1));
             }
             m_last_report_time = now;
         }
@@ -564,9 +462,10 @@ void StatusMonitor::task_loop() {
         
         // Update NeoPixel animation (for flashing states)
         NeoPixelStatus::update(now);
-        
-        // Small delay to prevent task from consuming all CPU
-        vTaskDelay(pdMS_TO_TICKS(100));
+
+        // Reduced delay from 100ms to 50ms now that WebSocket broadcasts are removed
+        // This provides better button responsiveness while still yielding to other tasks
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
     
     // Task loop has exited - handle shutdown if initiated
