@@ -10,7 +10,8 @@ FlashStorage::FlashStorage()
       m_partition_size(0), m_write_offset(0), m_session_start_offset(0),
       m_bytes_written(0), m_sample_buffer_pos(0), m_block_timestamp_us(0),
       m_writer_task(nullptr), m_sample_queue(nullptr),
-      m_running(false), m_paused(false) {
+      m_running(false), m_paused(false),
+      m_queue_overruns(0), m_samples_queued(0) {
     memset(&m_session_header, 0, sizeof(m_session_header));
     memset(m_startup_id, 0, sizeof(m_startup_id));
     memset(m_sample_buffer, 0, sizeof(m_sample_buffer));
@@ -112,8 +113,9 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
         return false;
     }
     
-    // Start writer task on Core 1 with low priority
-    // Flash writes are blocking operations that starve Core 0's BLE/WiFi stack
+    // Start writer task on Core 0 with low priority
+    // Core 1 writes to PSRAM queue (fast, non-blocking), Core 0 drains to flash (slow, blocking OK)
+    // This decouples real-time sensor reads (Core 1) from blocking flash operations (Core 0)
     m_running = true;
     BaseType_t result = xTaskCreatePinnedToCore(
         writer_task_wrapper,
@@ -122,7 +124,7 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
         this,              // Parameter
         1,                 // Priority (low)
         &m_writer_task,
-        1                  // Core 1 - moved from Core 0 to reduce starvation
+        0                  // Core 0 - handles blocking flash writes while Core 1 stays responsive
     );
     
     if (result != pdPASS) {
@@ -131,7 +133,7 @@ bool FlashStorage::begin(RTCManager* rtc_manager) {
         return false;
     }
     
-    Serial.println("[FlashStorage] Started successfully on Core 1");
+    Serial.println("[FlashStorage] Started successfully on Core 0 (blocking flash ops isolated from Core 1 sensors)");
     return true;
 }
 
@@ -174,29 +176,46 @@ void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel
     }
     
     int64_t now = esp_timer_get_time();
-    
-    // Queue accelerometer
+
+    // Helper lambda for non-blocking queue send with monitoring
+    // Returns true if queued, false if queue full (overrun)
+    auto queue_sample = [this](SampleData& sample) -> bool {
+        if (xQueueSend(m_sample_queue, &sample, 0) == pdTRUE) {
+            m_samples_queued++;
+            return true;
+        } else {
+            m_queue_overruns++;
+            // Warn on first overrun, then every 100 overruns
+            if (m_queue_overruns == 1 || m_queue_overruns % 100 == 0) {
+                Serial.printf("[FlashStorage] WARNING: Queue overrun! Dropped %u samples (Core 0 can't drain fast enough)\n",
+                              m_queue_overruns);
+            }
+            return false;
+        }
+    };
+
+    // Queue accelerometer (Core 1 → PSRAM queue → Core 0, non-blocking)
     SampleData sample;
     sample.type = 0x01;  // SAMPLE_ACCEL
     sample.timestamp_us = now;
     sample.data.xyz.x = accel.x;
     sample.data.xyz.y = accel.y;
     sample.data.xyz.z = accel.z;
-    xQueueSend(m_sample_queue, &sample, 0);  // Don't block
+    queue_sample(sample);
     
     // Queue gyroscope
     sample.type = 0x02;  // SAMPLE_GYRO
     sample.data.xyz.x = gyro.x;
     sample.data.xyz.y = gyro.y;
     sample.data.xyz.z = gyro.z;
-    xQueueSend(m_sample_queue, &sample, 0);
-    
+    queue_sample(sample);
+
     // Queue compass
     sample.type = 0x03;  // SAMPLE_COMPASS
     sample.data.xyz.x = compass.x;
     sample.data.xyz.y = compass.y;
     sample.data.xyz.z = compass.z;
-    xQueueSend(m_sample_queue, &sample, 0);
+    queue_sample(sample);
     
     // Queue GPS if valid
     if (gps.valid) {
@@ -215,7 +234,7 @@ void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel
         sample.data.gps.altitude = gps.altitude;
         sample.data.gps.speed = gps.speed;
         // Note: heading and hdop not in gps_data_t, would need derived from other data
-        xQueueSend(m_sample_queue, &sample, 0);
+        queue_sample(sample);
     }
     
     // Queue OBD-II data if valid
@@ -227,7 +246,7 @@ void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel
         sample.data.obd.coolant_temp = obd.coolant_temp;
         sample.data.obd.maf = obd.maf_flow;
         sample.data.obd.intake_temp = obd.intake_temp;
-        xQueueSend(m_sample_queue, &sample, 0);
+        queue_sample(sample);
     }
     
     // Queue battery
@@ -235,7 +254,7 @@ void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel
     sample.data.battery.voltage = battery.voltage;
     sample.data.battery.current = battery.current;
     sample.data.battery.soc = battery.state_of_charge;
-    xQueueSend(m_sample_queue, &sample, 0);
+    queue_sample(sample);
 }
 
 void FlashStorage::pause() {
@@ -259,12 +278,18 @@ void FlashStorage::writer_task_wrapper(void* arg) {
 }
 
 void FlashStorage::writer_task_loop() {
-    Serial.println("[FlashStorage] Writer task started on Core 1");
-    
+    Serial.println("[FlashStorage] Writer task started on Core 0 - draining PSRAM queue to flash");
+    Serial.printf("[FlashStorage] Queue buffer: %u samples (~%.1f seconds at 10Hz)\n",
+                  QUEUE_SIZE, QUEUE_SIZE / 10.0f);
+
     SampleData sample;
     TickType_t last_flush = xTaskGetTickCount();
     const TickType_t flush_interval = pdMS_TO_TICKS(5000);  // Flush every 5 seconds
-    
+
+    // Queue health monitoring
+    uint32_t last_health_check = millis();
+    const uint32_t health_check_interval = 30000;  // Report queue health every 30 seconds
+
     while (m_running) {
         // Receive samples from queue with timeout
         if (xQueueReceive(m_sample_queue, &sample, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -322,6 +347,23 @@ void FlashStorage::writer_task_loop() {
                 flush_block();
             }
             last_flush = xTaskGetTickCount();
+        }
+
+        // Periodic queue health check
+        uint32_t now_ms = millis();
+        if (now_ms - last_health_check >= health_check_interval) {
+            UBaseType_t queue_waiting = uxQueueMessagesWaiting(m_sample_queue);
+            UBaseType_t queue_available = uxQueueSpacesAvailable(m_sample_queue);
+            float queue_usage_pct = (queue_waiting * 100.0f) / QUEUE_SIZE;
+
+            Serial.printf("[FlashStorage] Queue health: %u/%u used (%.1f%%), %u overruns, %u queued\n",
+                          queue_waiting, QUEUE_SIZE, queue_usage_pct, m_queue_overruns, m_samples_queued);
+
+            if (queue_usage_pct > 80.0f) {
+                Serial.printf("[FlashStorage] WARNING: Queue >80%% full! Core 0 struggling to keep up with Core 1\n");
+            }
+
+            last_health_check = now_ms;
         }
     }
     

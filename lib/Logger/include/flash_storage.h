@@ -141,6 +141,10 @@ private:
     QueueHandle_t m_sample_queue;
     bool m_running;
     bool m_paused;
+
+    // Queue monitoring (for Core 0/1 buffer health)
+    uint32_t m_queue_overruns;  // Count of dropped samples when queue full
+    uint32_t m_samples_queued;  // Total samples successfully queued
     
     // Sample queue item
     struct SampleData {
@@ -164,5 +168,5 @@ private:
         } data;
     };
     
-    static constexpr size_t QUEUE_SIZE = 50;  // ~5 seconds at 10Hz
+    static constexpr size_t QUEUE_SIZE = 500;  // ~50 seconds at 10Hz - large PSRAM buffer for Core 0/1 decoupling
 };
