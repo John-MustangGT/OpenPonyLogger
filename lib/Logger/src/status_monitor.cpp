@@ -9,6 +9,8 @@
 #include <cstdio>
 #include <esp_log.h>
 #include <esp_sleep.h>
+#include <driver/gpio.h>
+#include <WiFi.h>
 #include <ArduinoJson.h>
 
 // Button GPIO pins
@@ -18,7 +20,8 @@
 #define VBUS_DETECT_PIN 19  // USB power detection
 
 // Power management settings
-#define USB_TIMEOUT_MS 60000  // 1 minute
+#define USB_TIMEOUT_MS 60000  // 1 minute countdown before sleep
+#define LIGHT_SLEEP_DURATION_US (5 * 60 * 1000000ULL)  // 5 minutes in microseconds
 
 // Button debounce settings
 #define BUTTON_DEBOUNCE_MS 20
@@ -332,12 +335,97 @@ void StatusMonitor::task_loop() {
                 // Check if timeout expired
                 uint32_t time_since_loss = now - m_usb_loss_time;
                 if (time_since_loss >= USB_TIMEOUT_MS) {
-                    // Timeout expired - initiate shutdown
-                    ESP_LOGI(TAG, "[Power] Countdown complete - initiating shutdown...");
+                    // Timeout expired - initiate 2-stage sleep
+                    ESP_LOGI(TAG, "[Power] Countdown complete - preparing for light sleep...");
                     m_shutdown_initiated = true;
 
-                    // Stop the task loop after this iteration
-                    m_running = false;
+                    // === Stage 1: Prepare for Light Sleep ===
+
+                    // 1. Flush any pending flash writes
+                    if (m_flash_storage != nullptr) {
+                        ESP_LOGI(TAG, "[Power] Flushing pending flash writes...");
+                        // Give flash writer time to finish current operation
+                        vTaskDelay(pdMS_TO_TICKS(500));
+                    }
+
+                    // 2. Disconnect BLE to save power
+                    ESP_LOGI(TAG, "[Power] Disconnecting BLE...");
+                    IcarBleDriver::disconnect();
+
+                    // 3. Show sleep message on display
+                    ST7789Display::show_shutdown_screen(0);  // Show "sleeping" state
+
+                    // Note: WiFi stays on during light sleep - it will automatically reconnect
+                    // Light sleep keeps WiFi/BT peripherals powered (~0.8mA vs 80mA active)
+
+                    // 4. Configure wake sources
+                    // Wake on USB power restore (GPIO19 goes HIGH)
+                    esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_DETECT_PIN, 1);  // Wake on HIGH
+
+                    // Wake after 5 minutes if USB not restored
+                    esp_sleep_enable_timer_wakeup(LIGHT_SLEEP_DURATION_US);
+
+                    ESP_LOGI(TAG, "[Power] Entering light sleep for 5 minutes...");
+                    ESP_LOGI(TAG, "[Power] Wake sources: USB restore (GPIO19) or 5-minute timer");
+
+                    // Small delay to ensure logs are flushed
+                    vTaskDelay(pdMS_TO_TICKS(100));
+
+                    // === Enter Light Sleep ===
+                    esp_light_sleep_start();
+
+                    // === Woke Up from Light Sleep ===
+                    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+
+                    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
+                        // Woke up because USB was restored
+                        ESP_LOGI(TAG, "[Power] ✓ Woke from light sleep - USB power restored!");
+                        ESP_LOGI(TAG, "[Power] Resuming normal operation...");
+
+                        // Cancel shutdown and resume
+                        m_shutdown_pending = false;
+                        m_shutdown_initiated = false;
+                        m_usb_powered = true;
+                        m_usb_loss_time = 0;
+
+                        // WiFi automatically stays connected during light sleep
+
+                        // Restart BLE scanning if needed
+                        ESP_LOGI(TAG, "[Power] Restarting BLE scanning...");
+                        IcarBleDriver::start_scan();
+
+                        // Update NeoPixel state
+                        NeoPixelStatus::setState(NeoPixelStatus::State::RUNNING);
+
+                    } else if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+                        // Timer expired - USB not restored in 5 minutes
+                        ESP_LOGI(TAG, "[Power] Light sleep timer expired (5 minutes)");
+                        ESP_LOGI(TAG, "[Power] USB still not present - entering deep sleep...");
+
+                        // === Stage 2: Deep Sleep ===
+
+                        // Configure wake on USB restore only
+                        esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_DETECT_PIN, 1);
+
+                        ESP_LOGI(TAG, "[Power] Entering deep sleep (wake on USB restore only)");
+                        ESP_LOGI(TAG, "[Power] Device will reboot when USB power restored");
+
+                        // Small delay for logs
+                        vTaskDelay(pdMS_TO_TICKS(100));
+
+                        // Enter deep sleep (device will reboot on wake)
+                        esp_deep_sleep_start();
+
+                        // Never reaches here
+                    } else {
+                        // Unknown wake reason
+                        ESP_LOGW(TAG, "[Power] Woke from light sleep - unknown reason: %d", wakeup_reason);
+                        ESP_LOGI(TAG, "[Power] Resuming normal operation...");
+
+                        m_shutdown_pending = false;
+                        m_shutdown_initiated = false;
+                    }
+
                 } else {
                     // Update shutdown screen every second
                     static uint32_t last_shutdown_update = 0;
