@@ -131,7 +131,7 @@ void RTLoggerThread::task_loop() {
     if (first_run) {
         Serial.printf("RT Logger thread started - Main: %dms, GPS: %dms, IMU: %dms, OBD: %dms\n",
                      m_update_rate_ms, m_gps_rate_ms, m_imu_rate_ms, m_obd_rate_ms);
-        Serial.flush();
+        // Serial.flush() removed - can block Core 1 for 10-50ms
         first_run = false;
     }
     
@@ -164,11 +164,8 @@ void RTLoggerThread::task_loop() {
         }
         
         // OBD update now driven from StatusMonitor on Core 0 to keep NimBLE stable
+        // Note: OBD sample counting removed to avoid cross-core BLE access
         if (loop_start_ms - last_obd_update >= m_obd_rate_ms) {
-            // OBD data is updated by StatusMonitor, just track timing here
-            if (IcarBleDriver::is_connected()) {
-                m_obd_samples++;
-            }
             last_obd_update = loop_start_ms;
         }
         
@@ -218,29 +215,13 @@ void RTLoggerThread::task_loop() {
                 doc["battery_current"] = m_last_battery.current;
                 doc["battery_temp"] = m_last_battery.temperature / 100.0f;
 
-                // OBD data (if connected)
-                JsonObject obd_obj = doc["obd"].to<JsonObject>();
-                bool obd_connected = IcarBleDriver::is_connected();
-                obd_obj["connected"] = obd_connected;
-                if (obd_connected) {
-                    obd_data_t obd = m_sensor_manager->get_obd();
-                    obd_obj["rpm"] = obd.engine_rpm;
-                    obd_obj["speed_kph"] = obd.vehicle_speed;
-                    obd_obj["coolant_temp"] = obd.coolant_temp;
-                    obd_obj["throttle_pos"] = obd.throttle_position;
-                    obd_obj["engine_load"] = obd.engine_load;
-                    obd_obj["intake_temp"] = obd.intake_temp;
-                } else {
-                    obd_obj["rpm"] = nullptr;
-                    obd_obj["speed_kph"] = nullptr;
-                    obd_obj["coolant_temp"] = nullptr;
-                    obd_obj["throttle_pos"] = nullptr;
-                    obd_obj["engine_load"] = nullptr;
-                    obd_obj["intake_temp"] = nullptr;
-                }
+                // NOTE: OBD data NOT included to avoid cross-core data access
+                // OBD is driven by Core 0's BLE stack (StatusMonitor)
+                // Reading Core 0's OBD data from Core 1 causes race conditions
+                // Clients can get OBD data from storage/status reports if needed
 
                 // Serialize and broadcast
-                char json_buffer[768];  // Increased from 512 to accommodate OBD data
+                char json_buffer[512];
                 size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
                 if (n > 0) {
                     WiFiManager::broadcast_json(json_buffer);
@@ -259,7 +240,7 @@ void RTLoggerThread::task_loop() {
             if (DebugFlags::ENABLE_STATUS_REPORT) {
                 Serial.printf("[RTLogger] Measured Hz -> GPS: %.1f, IMU: %.1f, Overall: %.1f Hz (samples=%u, uptime=%ums)\n",
                              gps_hz, imu_hz, overall_hz, m_sample_count, loop_start_ms);
-                Serial.flush();
+                // Serial.flush() removed - blocks Core 1 for 10-50ms per call
             }
             gps_updates = 0;
             imu_updates = 0;

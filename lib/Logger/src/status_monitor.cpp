@@ -235,7 +235,7 @@ void StatusMonitor::task_loop() {
             d1_press_time = now;
             d1_pressed = false;
             Serial.printf("[D1] State changed: %d\n", d1_state);
-            Serial.flush();
+            // Serial.flush() removed - blocks Core 0 for 10-50ms
         }
         
         // Check for debounced button press (HIGH state for D1)
@@ -262,7 +262,7 @@ void StatusMonitor::task_loop() {
             d2_press_time = now;
             d2_pressed = false;
             Serial.printf("[D2] State changed: %d\n", d2_state);
-            Serial.flush();
+            // Serial.flush() removed - blocks Core 0 for 10-50ms
         }
         
         // Check for debounced button press (HIGH state for D2)
