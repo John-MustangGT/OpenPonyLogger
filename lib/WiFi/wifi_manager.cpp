@@ -102,6 +102,7 @@ bool WiFiManager::init() {
     m_server->on("/api/config", HTTP_POST, [](AsyncWebServerRequest* request){}, nullptr, handle_config_post);
     m_server->on("/api/about", HTTP_GET, handle_about);
     m_server->on("/api/restart", HTTP_POST, handle_restart);
+    m_server->on("/api/divorce", HTTP_POST, handle_divorce);
 
     // Log file management routes
     m_server->on("/api/logs", HTTP_GET, handle_logs_list);
@@ -364,7 +365,17 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
             doc["obd_info"]["ecm_name"] = String(ecm);
         }
     }
-    
+
+    // Marriage status
+    logging_config_t config = ConfigManager::get_current();
+    doc["marriage"]["is_married"] = config.is_married;
+    if (config.is_married) {
+        doc["marriage"]["vin"] = String(config.married_vin);
+        if (strlen(config.married_ecu) > 0) {
+            doc["marriage"]["ecu_name"] = String(config.married_ecu);
+        }
+    }
+
     String json_str;
     serializeJson(doc, json_str);
     request->send(200, "application/json", json_str);
@@ -377,6 +388,23 @@ void WiFiManager::handle_restart(AsyncWebServerRequest* request) {
     // Delay restart to allow response to be sent
     delay(500);
     ESP.restart();
+}
+
+void WiFiManager::handle_divorce(AsyncWebServerRequest* request) {
+    ESP_LOGI(TAG, "Divorce requested via web interface");
+
+    if (!ConfigManager::is_married()) {
+        request->send(400, "application/json", "{\"success\":false,\"error\":\"Logger is not married to any vehicle\"}");
+        return;
+    }
+
+    if (ConfigManager::divorce_from_vehicle()) {
+        ESP_LOGI(TAG, "✓ Successfully divorced from vehicle");
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Logger divorced from vehicle\"}");
+    } else {
+        ESP_LOGE(TAG, "Failed to divorce from vehicle");
+        request->send(500, "application/json", "{\"success\":false,\"error\":\"Failed to save divorce status\"}");
+    }
 }
 
 void WiFiManager::handle_websocket_event(AsyncWebSocket* server, AsyncWebSocketClient* client,

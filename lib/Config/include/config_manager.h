@@ -56,6 +56,11 @@ struct logging_config_t {
     // OBD-II BLE configuration
     bool obd_ble_enabled;   // Enable/disable BLE scanning for OBD-II devices
 
+    // Vehicle marriage (VIN binding)
+    char married_vin[18];   // VIN (17 chars + null terminator)
+    char married_ecu[32];   // ECU name/info (31 chars + null terminator)
+    bool is_married;        // Whether logger is married to a vehicle
+
     // Log level (0=NONE, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG, 5=VERBOSE)
     uint8_t log_level;      // Global default log level: INFO (3)
 
@@ -71,7 +76,10 @@ struct logging_config_t {
     
     // Default constructor with 10Hz across the board
     logging_config_t()
-        : main_loop_hz(10), gps_hz(10), imu_hz(10), obd_hz(10), obd_ble_enabled(true), log_level(3) {
+        : main_loop_hz(10), gps_hz(10), imu_hz(10), obd_hz(10), obd_ble_enabled(true),
+          is_married(false), log_level(3) {
+        married_vin[0] = '\0';
+        married_ecu[0] = '\0';
         // Initialize core PIDs (enabled by default at 10Hz)
         pid_configs[0x0C] = pid_config_t(0x0C, 10, true, "Engine RPM");
         pid_configs[0x0D] = pid_config_t(0x0D, 10, true, "Vehicle Speed");
@@ -158,12 +166,41 @@ public:
      * @param config Configuration containing log levels
      */
     static void apply_log_levels(const logging_config_t& config);
-    
+
     /**
      * @brief Reset to default configuration
      * @return true if successful
      */
     static bool reset_to_defaults();
+
+    /**
+     * @brief Marry logger to a vehicle
+     * Stores VIN and ECU info for future verification
+     * @param vin Vehicle Identification Number (17 chars)
+     * @param ecu_name ECU name/info
+     * @return true if successful
+     */
+    static bool marry_to_vehicle(const char* vin, const char* ecu_name);
+
+    /**
+     * @brief Divorce logger from married vehicle
+     * Clears stored VIN and allows connection to any vehicle
+     * @return true if successful
+     */
+    static bool divorce_from_vehicle();
+
+    /**
+     * @brief Check if logger is married to a vehicle
+     * @return true if married
+     */
+    static bool is_married();
+
+    /**
+     * @brief Verify if VIN matches married vehicle
+     * @param vin VIN to check
+     * @return true if matches (or not married)
+     */
+    static bool verify_vin(const char* vin);
 
 private:
     static bool m_initialized;
@@ -176,6 +213,9 @@ private:
     static const char* KEY_IMU_HZ;
     static const char* KEY_OBD_HZ;
     static const char* KEY_OBD_BLE_ENABLED;
+    static const char* KEY_MARRIED_VIN;
+    static const char* KEY_MARRIED_ECU;
+    static const char* KEY_IS_MARRIED;
     static const char* KEY_LOG_LEVEL;
     static const char* KEY_NET_SSID;
     static const char* KEY_NET_PASSWORD;

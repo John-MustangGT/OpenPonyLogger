@@ -16,6 +16,9 @@ const char* ConfigManager::KEY_GPS_HZ = "gps_hz";
 const char* ConfigManager::KEY_IMU_HZ = "imu_hz";
 const char* ConfigManager::KEY_OBD_HZ = "obd_hz";
 const char* ConfigManager::KEY_OBD_BLE_ENABLED = "obd_ble_en";
+const char* ConfigManager::KEY_MARRIED_VIN = "married_vin";
+const char* ConfigManager::KEY_MARRIED_ECU = "married_ecu";
+const char* ConfigManager::KEY_IS_MARRIED = "is_married";
 const char* ConfigManager::KEY_LOG_LEVEL = "log_level";
 const char* ConfigManager::KEY_NET_SSID = "net_ssid";
 const char* ConfigManager::KEY_NET_PASSWORD = "net_password";
@@ -65,6 +68,25 @@ logging_config_t ConfigManager::load() {
     config.imu_hz = prefs.getUShort(KEY_IMU_HZ, 10);
     config.obd_hz = prefs.getUShort(KEY_OBD_HZ, 10);
     config.obd_ble_enabled = prefs.getBool(KEY_OBD_BLE_ENABLED, true);
+
+    // Load vehicle marriage info
+    config.is_married = prefs.getBool(KEY_IS_MARRIED, false);
+    if (config.is_married) {
+        size_t vin_len = prefs.getString(KEY_MARRIED_VIN, config.married_vin, sizeof(config.married_vin));
+        if (vin_len == 0 || vin_len > 17) {
+            // Invalid VIN, clear marriage
+            config.is_married = false;
+            config.married_vin[0] = '\0';
+            config.married_ecu[0] = '\0';
+        } else {
+            config.married_vin[sizeof(config.married_vin) - 1] = '\0';
+            size_t ecu_len = prefs.getString(KEY_MARRIED_ECU, config.married_ecu, sizeof(config.married_ecu));
+            if (ecu_len > 0) {
+                config.married_ecu[sizeof(config.married_ecu) - 1] = '\0';
+            }
+        }
+    }
+
     config.log_level = prefs.getUChar(KEY_LOG_LEVEL, 3);  // Default: INFO
 
     // Load per-module log levels
@@ -153,6 +175,18 @@ bool ConfigManager::save(const logging_config_t& config) {
     prefs.putUShort(KEY_IMU_HZ, config.imu_hz);
     prefs.putUShort(KEY_OBD_HZ, config.obd_hz);
     prefs.putBool(KEY_OBD_BLE_ENABLED, config.obd_ble_enabled);
+
+    // Save vehicle marriage info
+    prefs.putBool(KEY_IS_MARRIED, config.is_married);
+    if (config.is_married) {
+        prefs.putString(KEY_MARRIED_VIN, config.married_vin);
+        prefs.putString(KEY_MARRIED_ECU, config.married_ecu);
+    } else {
+        // Clear marriage data if not married
+        prefs.remove(KEY_MARRIED_VIN);
+        prefs.remove(KEY_MARRIED_ECU);
+    }
+
     prefs.putUChar(KEY_LOG_LEVEL, config.log_level);
 
     // Save per-module log levels
@@ -296,4 +330,92 @@ void ConfigManager::apply_log_levels(const logging_config_t& config) {
 
     ESP_LOGI("Config", "Applied log levels: global=%d, modules=%zu",
              config.log_level, config.module_log_levels.size());
+}
+
+bool ConfigManager::marry_to_vehicle(const char* vin, const char* ecu_name) {
+    if (!m_initialized) {
+        ESP_LOGE(TAG, "Config manager not initialized");
+        return false;
+    }
+
+    if (vin == nullptr || strlen(vin) != 17) {
+        ESP_LOGE(TAG, "Invalid VIN (must be exactly 17 characters)");
+        return false;
+    }
+
+    logging_config_t config = m_current_config;
+
+    // Store VIN and ECU info
+    strncpy(config.married_vin, vin, sizeof(config.married_vin) - 1);
+    config.married_vin[sizeof(config.married_vin) - 1] = '\0';
+
+    if (ecu_name != nullptr && strlen(ecu_name) > 0) {
+        strncpy(config.married_ecu, ecu_name, sizeof(config.married_ecu) - 1);
+        config.married_ecu[sizeof(config.married_ecu) - 1] = '\0';
+    } else {
+        config.married_ecu[0] = '\0';
+    }
+
+    config.is_married = true;
+
+    if (update(config)) {
+        ESP_LOGI(TAG, "✓ Logger married to vehicle VIN: %.17s", vin);
+        return true;
+    }
+
+    ESP_LOGE(TAG, "Failed to save marriage info");
+    return false;
+}
+
+bool ConfigManager::divorce_from_vehicle() {
+    if (!m_initialized) {
+        ESP_LOGE(TAG, "Config manager not initialized");
+        return false;
+    }
+
+    logging_config_t config = m_current_config;
+
+    // Clear marriage info
+    config.is_married = false;
+    config.married_vin[0] = '\0';
+    config.married_ecu[0] = '\0';
+
+    if (update(config)) {
+        ESP_LOGI(TAG, "✓ Logger divorced from vehicle");
+        return true;
+    }
+
+    ESP_LOGE(TAG, "Failed to clear marriage info");
+    return false;
+}
+
+bool ConfigManager::is_married() {
+    return m_current_config.is_married;
+}
+
+bool ConfigManager::verify_vin(const char* vin) {
+    if (!m_initialized) {
+        ESP_LOGE(TAG, "Config manager not initialized");
+        return false;
+    }
+
+    // If not married, allow any VIN
+    if (!m_current_config.is_married) {
+        return true;
+    }
+
+    // If married, check VIN matches
+    if (vin == nullptr || strlen(vin) != 17) {
+        ESP_LOGW(TAG, "Invalid VIN format");
+        return false;
+    }
+
+    bool matches = (strncmp(m_current_config.married_vin, vin, 17) == 0);
+
+    if (!matches) {
+        ESP_LOGW(TAG, "VIN mismatch! Logger married to: %.17s, received: %.17s",
+                 m_current_config.married_vin, vin);
+    }
+
+    return matches;
 }

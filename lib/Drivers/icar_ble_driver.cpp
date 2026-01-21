@@ -1,5 +1,6 @@
 #include "icar_ble_driver.h"
 #include "../Logger/include/debug_flags.h"
+#include "../Config/include/config_manager.h"
 #include <cstring>
 #include <algorithm>
 #include <esp_log.h>
@@ -353,10 +354,34 @@ bool IcarBleDriver::connect(const char* address) {
     if (DebugFlags::ENABLE_OBD_DEBUG) {
         ESP_LOGD(TAG, "Free heap: %u bytes", ESP.getFreeHeap());
     }
-    
-    // Skip VIN/ECM queries to avoid additional BLE traffic during initial connection
-    // request_vehicle_info();
-    
+
+    // Request VIN and ECM info from vehicle
+    request_vehicle_info();
+
+    // Verify VIN if logger is married to a vehicle
+    if (ConfigManager::is_married()) {
+        if (!ConfigManager::verify_vin(m_vin)) {
+            ESP_LOGE(TAG, "❌ VIN MISMATCH! This is not the married vehicle.");
+            ESP_LOGE(TAG, "Expected VIN: %s", ConfigManager::get_current().married_vin);
+            ESP_LOGE(TAG, "Received VIN: %s", m_vin);
+            ESP_LOGE(TAG, "Disconnecting from wrong vehicle...");
+
+            // Disconnect from wrong vehicle
+            disconnect();
+            return false;
+        } else {
+            ESP_LOGI(TAG, "✓ VIN verified - connected to married vehicle");
+        }
+    } else {
+        // Not married, attempt to marry to this vehicle
+        if (m_vin[0] != '\0' && strcmp(m_vin, "N/A") != 0) {
+            ESP_LOGI(TAG, "Logger not married - marrying to VIN: %s", m_vin);
+            ConfigManager::marry_to_vehicle(m_vin, m_ecm_name);
+        } else {
+            ESP_LOGW(TAG, "Could not retrieve VIN - logger remains unmarried");
+        }
+    }
+
     return true;
 }
 

@@ -86,7 +86,12 @@ private:
      * @brief Handle POST request to restart device
      */
     static void handle_restart(AsyncWebServerRequest* request);
-    
+
+    /**
+     * @brief Handle POST request to divorce logger from married vehicle
+     */
+    static void handle_divorce(AsyncWebServerRequest* request);
+
     /**
      * @brief Handle GET request for list of log files
      */

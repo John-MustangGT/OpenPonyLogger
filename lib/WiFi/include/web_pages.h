@@ -580,7 +580,30 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                     <span class="info-value" id="obd-ecm">--</span>
                 </div>
             </div>
-            
+
+            <div class="info-section" id="marriage-section">
+                <h3>🔗 Married Vehicle</h3>
+                <p style="color: #aaa; font-size: 13px; margin-bottom: 15px;" id="marriage-description">
+                    The logger is not married to any vehicle. It will automatically marry to the first vehicle it connects to.
+                </p>
+                <div id="marriage-info" style="display: none;">
+                    <div class="info-row">
+                        <span class="info-label">Vehicle VIN:</span>
+                        <span class="info-value" id="married-vin" style="font-family: monospace;">--</span>
+                    </div>
+                    <div class="info-row" id="married-ecu-row" style="display: none;">
+                        <span class="info-label">ECU Name:</span>
+                        <span class="info-value" id="married-ecu">--</span>
+                    </div>
+                    <button onclick="divorceFromVehicle()" style="background: #ff6b6b; margin-top: 15px;" id="divorce-btn">
+                        Divorce from Vehicle
+                    </button>
+                    <p style="color: #888; font-size: 11px; margin-top: 10px;">
+                        ⚠️ Divorcing will allow the logger to connect to any vehicle. The logger will marry to the next vehicle it connects to.
+                    </p>
+                </div>
+            </div>
+
             <div class="info-section">
                 <h3>Memory Usage</h3>
                 <div class="info-row">
@@ -886,7 +909,24 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 } else {
                     document.getElementById('obd-info-section').style.display = 'none';
                 }
-                
+
+                // Display marriage status
+                if (info.marriage && info.marriage.is_married) {
+                    document.getElementById('marriage-description').style.display = 'none';
+                    document.getElementById('marriage-info').style.display = 'block';
+                    document.getElementById('married-vin').textContent = info.marriage.vin || 'Unknown';
+
+                    if (info.marriage.ecu_name) {
+                        document.getElementById('married-ecu-row').style.display = 'flex';
+                        document.getElementById('married-ecu').textContent = info.marriage.ecu_name;
+                    } else {
+                        document.getElementById('married-ecu-row').style.display = 'none';
+                    }
+                } else {
+                    document.getElementById('marriage-description').style.display = 'block';
+                    document.getElementById('marriage-info').style.display = 'none';
+                }
+
                 // Display memory information
                 if (info.memory) {
                     const formatBytes = (bytes) => {
@@ -944,7 +984,35 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 }, 10000);
             }
         }
-        
+
+        async function divorceFromVehicle() {
+            if (!confirm('Are you sure you want to divorce the logger from the married vehicle? The logger will be able to connect to any vehicle after this.')) {
+                return;
+            }
+
+            const btn = document.getElementById('divorce-btn');
+            btn.disabled = true;
+            btn.textContent = 'Divorcing...';
+
+            try {
+                const response = await fetch('/api/divorce', { method: 'POST' });
+                const result = await response.json();
+
+                if (result.success) {
+                    alert('✓ Logger divorced from vehicle successfully!');
+                    // Reload about tab to refresh marriage status
+                    loadAbout();
+                } else {
+                    alert('❌ Failed to divorce: ' + (result.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('❌ Network error during divorce operation');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Divorce from Vehicle';
+            }
+        }
+
         function showStatus(elementId, message, type) {
             const el = document.getElementById(elementId);
             el.textContent = message;
