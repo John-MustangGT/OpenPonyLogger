@@ -8,6 +8,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+// Forward declaration to avoid circular dependency
+class FlashStorage;
+
 /**
  * @brief Status Monitor Thread - Core 0
  * Periodically reports on system status, write count, and latest sensor values
@@ -17,9 +20,11 @@ public:
     /**
      * @brief Constructor
      * @param rt_logger RTLoggerThread instance for accessing last sensor values
+     * @param flash_storage FlashStorage instance for direct OBD sample queuing
      * @param report_interval_ms How often to print status (default 10 seconds)
      */
-    StatusMonitor(RTLoggerThread* rt_logger, uint32_t report_interval_ms = 10000);
+    StatusMonitor(RTLoggerThread* rt_logger, FlashStorage* flash_storage = nullptr,
+                  uint32_t report_interval_ms = 10000);
     
     ~StatusMonitor();
     
@@ -56,6 +61,7 @@ public:
 
 private:
     RTLoggerThread* m_rt_logger;
+    FlashStorage* m_flash_storage;
     uint32_t m_report_interval_ms;
     TaskHandle_t m_task_handle;
     bool m_running;

@@ -58,7 +58,17 @@ public:
     void write_sample(const gps_data_t& gps, const accel_data_t& accel,
                      const gyro_data_t& gyro, const compass_data_t& compass,
                      const battery_data_t& battery, const obd_data_t& obd);
-    
+
+    /**
+     * @brief Queue OBD sample directly from Core 0 (StatusMonitor)
+     *
+     * Called when OBD data is updated via BLE. Uses the timestamp embedded
+     * in the obd_data_t structure for accurate timing.
+     *
+     * @param obd OBD-II data with timestamp_us already set
+     */
+    void queue_obd_sample(const obd_data_t& obd);
+
     /**
      * @brief Pause writing (for downloads)
      */

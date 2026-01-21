@@ -35,7 +35,8 @@ This document describes the dual-core architecture used to prevent resource star
 |------|----------|---------|
 | **Arduino loop()** | 1 | Minimal housekeeping, triggers storage writes |
 | **StatusMonitor** | 1 | Button debouncing, display updates, USB monitoring |
-| | | BLE driver updates @ 2Hz (NimBLE must be on Core 0) |
+| | | BLE driver updates @ 10Hz (NimBLE must be on Core 0) |
+| | | **OBD sample queuing @ 10Hz with microsecond timestamps** |
 | **FlashStorage writer** | 1 | **Drains PSRAM queue → Flash storage** |
 | | | Blocking flash erase/write operations isolated here |
 | **TimeUpdateTask** | 1 | GPS time synchronization to RTC/NVS |
@@ -58,8 +59,39 @@ Sensor reads                                  Flash writes
 - **Receive**: Core 0 blocks up to 100ms waiting for data
 - **Monitoring**: Overrun detection warns if Core 0 can't keep up
 
+### OBD-II Timestamping (Accurate Microsecond Timestamps)
+
+**Problem:** OBD data was previously bundled with other sensors and timestamped during the 5-second write cycle, causing up to ±500ms timing errors.
+
+**Solution:** OBD samples are now queued **immediately** when BLE data arrives, with timestamps captured at the moment of reception:
+
+```
+1. BLE notification arrives on Core 0 (StatusMonitor @ 10Hz)
+   ↓
+2. IcarBleDriver parses OBD response
+   ↓
+3. Timestamp captured: obd_data.timestamp_us = esp_timer_get_time()
+   ↓
+4. StatusMonitor calls queue_obd_sample(obd_data)
+   ↓
+5. OBD sample queued to PSRAM with accurate timestamp
+   ↓
+6. Core 0 FlashStorage writer drains queue as normal
+```
+
+**Benefits:**
+- ✅ **Microsecond accuracy**: Timestamp captured when data arrives, not 0-5 seconds later
+- ✅ **10Hz OBD updates**: Fast-changing PIDs (RPM, throttle, speed) sampled at 100ms intervals
+- ✅ **No cross-core access**: OBD is owned by Core 0, no race conditions
+- ✅ **Independent from sensor bundle**: OBD timing decoupled from GPS/IMU write cycle
+
+**Timestamp Accuracy:**
+- GPS/IMU/Battery: Timestamped when queued (every 5 seconds, accurate to ~1 second)
+- OBD: Timestamped when BLE data arrives (accurate to <1ms)
+
 ### Flash Storage Write Path
 
+**Core 1 Sensors (GPS, IMU, Battery):**
 ```
 1. Sensor data arrives on Core 1 (RTLoggerThread)
    ↓
@@ -74,6 +106,17 @@ Sensor reads                                  Flash writes
 6. Flash erase (1-10ms BLOCKING) + write
    ↓ (Core 1 unaffected - it's writing to PSRAM)
 7. Periodic flush every 5 seconds
+```
+
+**Core 0 OBD (Direct Queuing):**
+```
+1. BLE data arrives on Core 0 (StatusMonitor @ 10Hz)
+   ↓
+2. Timestamp captured immediately (esp_timer_get_time())
+   ↓
+3. queue_obd_sample() queues with accurate timestamp
+   ↓
+4. Core 0 writer drains and writes to flash
 ```
 
 ### Performance Optimizations (Core 0)
@@ -93,8 +136,9 @@ To reduce Core 0 load beyond just moving flash writes:
    - Sample count prints reduced from 1Hz to 0.1Hz (every 10s)
    - Yield after large serial outputs
 
-4. **Optimized BLE update frequency**
-   - Reduced from 5Hz to 2Hz (500ms interval)
+4. **Increased BLE/OBD update frequency**
+   - Increased from 2Hz to 10Hz (100ms interval) for fast-changing PIDs
+   - Captures RPM, throttle, and speed changes at high frequency
    - Yield point after each BLE update
 
 5. **Better task yielding**

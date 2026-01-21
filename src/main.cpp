@@ -75,9 +75,13 @@ IcarBleWrapper* obd_wrapper = nullptr;
 void on_storage_write(const gps_data_t& gps, const accel_data_t& accel,
                       const gyro_data_t& gyro, const compass_data_t& compass,
                       const battery_data_t& battery) {
-    // Get OBD data from sensor manager
-    obd_data_t obd = sensor_manager.get_obd();
-    
+    // NOTE: OBD data is NOT included here - it's queued directly by StatusMonitor
+    // on Core 0 with accurate microsecond timestamps when BLE data arrives.
+    // This avoids stale OBD data and cross-core synchronization issues.
+
+    // Create empty OBD data (not used, but required by write_sample signature)
+    obd_data_t obd = {};
+
     // Write to flash storage queue (non-blocking send to Core 0 task)
     if (flash_storage != nullptr) {
         flash_storage->write_sample(gps, accel, gyro, compass, battery, obd);
@@ -420,7 +424,7 @@ void setup() {
     // Create and start status monitor on core 0
     Serial.println("  → Creating StatusMonitor object...");
     Serial.flush();
-    status_monitor = new StatusMonitor(rt_logger, 5000);  // Report every 5 seconds to reduce Core 0 contention
+    status_monitor = new StatusMonitor(rt_logger, flash_storage, 5000);  // Pass FlashStorage for direct OBD queuing
     Serial.println("  ✓ StatusMonitor object created");
     Serial.flush();
     

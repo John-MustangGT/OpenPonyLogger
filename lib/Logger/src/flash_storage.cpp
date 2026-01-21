@@ -257,6 +257,40 @@ void FlashStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel
     queue_sample(sample);
 }
 
+void FlashStorage::queue_obd_sample(const obd_data_t& obd) {
+    if (!m_running || m_paused || !obd.valid) {
+        return;
+    }
+
+    // Helper lambda for non-blocking queue send with monitoring
+    auto queue_sample = [this](SampleData& sample) -> bool {
+        if (xQueueSend(m_sample_queue, &sample, 0) == pdTRUE) {
+            m_samples_queued++;
+            return true;
+        } else {
+            m_queue_overruns++;
+            // Warn on first overrun, then every 100 overruns
+            if (m_queue_overruns == 1 || m_queue_overruns % 100 == 0) {
+                Serial.printf("[FlashStorage] WARNING: Queue overrun! Dropped %u samples (Core 0 can't drain fast enough)\n",
+                              m_queue_overruns);
+            }
+            return false;
+        }
+    };
+
+    // Queue OBD sample with its embedded timestamp
+    SampleData sample;
+    sample.type = 0x06;  // SAMPLE_OBD
+    sample.timestamp_us = obd.timestamp_us;  // Use the timestamp captured when data arrived
+    sample.data.obd.rpm = obd.engine_rpm;
+    sample.data.obd.speed = obd.vehicle_speed;
+    sample.data.obd.throttle = obd.throttle_position;
+    sample.data.obd.coolant_temp = obd.coolant_temp;
+    sample.data.obd.maf = obd.maf_flow;
+    sample.data.obd.intake_temp = obd.intake_temp;
+    queue_sample(sample);
+}
+
 void FlashStorage::pause() {
     Serial.println("[FlashStorage] Pausing writes...");
     m_paused = true;

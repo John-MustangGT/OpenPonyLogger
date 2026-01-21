@@ -35,7 +35,8 @@ struct obd_data_t {
     // Connection state
     bool connected = false;            // Connected to OBD device
     bool valid = false;                // Data is valid/fresh
-    uint32_t last_update_ms = 0;       // Last successful update time
+    uint32_t last_update_ms = 0;       // Last successful update time (milliseconds)
+    int64_t timestamp_us = 0;          // Microsecond timestamp when data was captured
 };
 
 #endif // OBD_DATA_H

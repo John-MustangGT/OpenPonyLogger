@@ -316,6 +316,8 @@ bool IcarBleDriver::connect(const char* address) {
                         }
                         break;
                 }
+                // Capture microsecond timestamp when data arrives for accurate logging
+                m_data.timestamp_us = esp_timer_get_time();
                 m_data.valid = true;
                 m_data.last_update_ms = millis();
             }

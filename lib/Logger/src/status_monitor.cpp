@@ -1,4 +1,5 @@
 #include "status_monitor.h"
+#include "flash_storage.h"
 #include "units_helper.h"
 #include "wifi_manager.h"
 #include "config_manager.h"
@@ -25,8 +26,10 @@
 
 static const char* TAG = "STATUS";
 
-StatusMonitor::StatusMonitor(RTLoggerThread* rt_logger, uint32_t report_interval_ms)
+StatusMonitor::StatusMonitor(RTLoggerThread* rt_logger, FlashStorage* flash_storage,
+                             uint32_t report_interval_ms)
     : m_rt_logger(rt_logger),
+      m_flash_storage(flash_storage),
       m_report_interval_ms(report_interval_ms),
       m_task_handle(nullptr),
       m_running(false),
@@ -351,10 +354,17 @@ void StatusMonitor::task_loop() {
         }
 
         // Drive BLE scanning/connection from Core 0 to avoid NimBLE crashes on other cores
-        // Reduced from 5Hz to 2Hz to minimize Core 0 blocking during BLE operations
+        // Update OBD at 10Hz (100ms) for fast-changing PIDs (RPM, throttle, speed)
         static uint32_t last_obd_update = 0;
-        if (now - last_obd_update >= 500) { // 2 Hz on Core 0 (reduced from 5Hz)
-            IcarBleDriver::update();
+        if (now - last_obd_update >= 100) { // 10 Hz on Core 0 for fast PID updates
+            if (IcarBleDriver::update()) {
+                // OBD data was updated, queue sample with accurate timestamp directly to flash
+                if (m_flash_storage != nullptr && IcarBleDriver::is_connected()) {
+                    obd_data_t obd = IcarBleDriver::get_data();
+                    // Queue OBD sample with microsecond timestamp captured when data arrived
+                    m_flash_storage->queue_obd_sample(obd);
+                }
+            }
             last_obd_update = now;
             // Yield after BLE update as it can be blocking
             vTaskDelay(pdMS_TO_TICKS(1));
