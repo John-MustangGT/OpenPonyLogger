@@ -12,6 +12,7 @@
 #include "time_update_task.h"
 #include "rt_logger_thread.h"
 #include "flash_storage.h"
+#include "log_file_manager_flash.h"
 #include "storage_reporter.h"
 #include "status_monitor.h"
 #include "st7789_display.h"
@@ -406,7 +407,18 @@ void setup() {
     }
     Serial.println("✓ Flash storage initialized");
     Serial.flush();
-    
+
+    // Initialize LogFileManager for downloads
+    Serial.println("▶ Initializing LogFileManager for downloads...");
+    Serial.flush();
+    if (LogFileManager::init()) {
+        LogFileManager::set_flash_storage(flash_storage);
+        Serial.println("✓ LogFileManager initialized");
+    } else {
+        Serial.println("✗ WARNING: LogFileManager initialization failed, downloads will not work");
+    }
+    Serial.flush();
+
     // Initialize WiFi AP mode with WebSocket server
     Serial.println("▶ Initializing WiFi AP mode...");
     Serial.flush();

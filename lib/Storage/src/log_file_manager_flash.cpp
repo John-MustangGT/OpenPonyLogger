@@ -7,6 +7,7 @@ FlashStorage* LogFileManager::s_flash_storage = nullptr;
 std::vector<log_file_info_t> LogFileManager::s_log_files;
 bool LogFileManager::s_initialized = false;
 bool LogFileManager::s_download_active = false;
+uint32_t LogFileManager::s_download_ref_count = 0;
 
 bool LogFileManager::init() {
     if (s_initialized) {
@@ -160,32 +161,43 @@ size_t LogFileManager::read_flash(size_t offset, uint8_t* buffer, size_t size) {
     if (!s_partition || !s_flash_storage) {
         return 0;
     }
-    
-    // Pause logging during read
-    if (!s_download_active) {
-        set_download_active(true);
+
+    // On first chunk (offset==0), increment ref count and pause logging
+    if (offset == 0) {
+        s_download_ref_count++;
+        if (!s_download_active) {
+            set_download_active(true);
+        }
     }
-    
+
     size_t data_size = s_flash_storage->get_write_offset();
     if (offset >= data_size) {
-        // End of data - resume logging
-        if (s_download_active) {
+        // End of data - decrement ref count and resume if no more downloads
+        s_download_ref_count--;
+        if (s_download_ref_count == 0 && s_download_active) {
             set_download_active(false);
         }
         return 0;
     }
-    
+
     size_t to_read = size;
     if (offset + to_read > data_size) {
         to_read = data_size - offset;
     }
-    
+
     esp_err_t err = esp_partition_read(s_partition, offset, buffer, to_read);
     if (err != ESP_OK) {
-        Serial.printf("[LogFileManager] Read failed at %d: %d\n", offset, err);
+        Serial.printf("[LogFileManager] Read failed at %zu: %d\n", offset, err);
+        // Decrement ref count on error
+        if (s_download_ref_count > 0) {
+            s_download_ref_count--;
+            if (s_download_ref_count == 0 && s_download_active) {
+                set_download_active(false);
+            }
+        }
         return 0;
     }
-    
+
     return to_read;
 }
 

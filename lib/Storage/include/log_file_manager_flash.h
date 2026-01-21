@@ -93,4 +93,5 @@ private:
     static std::vector<log_file_info_t> s_log_files;
     static bool s_initialized;
     static bool s_download_active;
+    static uint32_t s_download_ref_count;  // Track concurrent downloads
 };

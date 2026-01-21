@@ -431,25 +431,25 @@ void WiFiManager::handle_log_download(AsyncWebServerRequest* request) {
     Serial.printf("[WiFi] Download requested: %s\n", filename.c_str());
     
     // Stream entire flash partition as .opl file
+    // Note: 'index' parameter is the byte offset that AsyncWebServer tracks for us
     AsyncWebServerResponse* response = request->beginChunkedResponse(
         "application/octet-stream",
         [filename](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
-            static size_t flash_offset = 0;
-            
-            // Reset on first chunk
+            // index is the byte offset provided by AsyncWebServer - use it directly
             if (index == 0) {
-                flash_offset = 0;
                 Serial.println("[WiFi] Starting flash stream...");
             }
-            
-            // Read from flash partition
-            size_t bytes_read = LogFileManager::read_flash(flash_offset, buffer, maxLen);
-            flash_offset += bytes_read;
-            
+
+            // Read from flash partition at the current offset
+            size_t bytes_read = LogFileManager::read_flash(index, buffer, maxLen);
+
             if (bytes_read == 0) {
-                Serial.printf("[WiFi] Stream complete: %d total bytes\n", flash_offset);
+                Serial.printf("[WiFi] Stream complete: %zu total bytes\n", index);
+            } else if (index % (32 * 1024) == 0 && index > 0) {
+                // Progress indicator every 32KB
+                Serial.printf("[WiFi] Streamed %zu KB...\n", index / 1024);
             }
-            
+
             return bytes_read;
         }
     );
