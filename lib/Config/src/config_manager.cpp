@@ -1,6 +1,9 @@
 #include "config_manager.h"
 #include <Preferences.h>
 #include <esp_crc.h>
+#include <esp_log.h>
+
+static const char* TAG = "Config";
 
 // Static member initialization
 bool ConfigManager::m_initialized = false;
@@ -24,25 +27,25 @@ bool ConfigManager::init() {
     if (m_initialized) {
         return true;
     }
-    
-    Serial.println("[Config] Initializing configuration manager...");
-    
+
+    ESP_LOGI(TAG, "Initializing configuration manager...");
+
     // Load configuration from NVS
     m_current_config = load();
-    
+
     // Validate loaded configuration
     if (!validate(m_current_config)) {
-        Serial.println("[Config] WARNING: Invalid configuration loaded, using defaults");
+        ESP_LOGW(TAG, "Invalid configuration loaded, using defaults");
         m_current_config = logging_config_t();  // Reset to defaults
         save(m_current_config);  // Save defaults
     }
-    
-    Serial.printf("[Config] ✓ Configuration loaded - Main: %dHz, GPS: %dHz, IMU: %dHz, OBD: %dHz\n",
-                  m_current_config.main_loop_hz,
-                  m_current_config.gps_hz,
-                  m_current_config.imu_hz,
-                  m_current_config.obd_hz);
-    
+
+    ESP_LOGI(TAG, "✓ Configuration loaded - Main: %dHz, GPS: %dHz, IMU: %dHz, OBD: %dHz",
+             m_current_config.main_loop_hz,
+             m_current_config.gps_hz,
+             m_current_config.imu_hz,
+             m_current_config.obd_hz);
+
     m_initialized = true;
     return true;
 }
@@ -50,9 +53,9 @@ bool ConfigManager::init() {
 logging_config_t ConfigManager::load() {
     Preferences prefs;
     logging_config_t config;
-    
+
     if (!prefs.begin(NVS_NAMESPACE, true)) {  // true = read-only
-        Serial.println("[Config] No saved configuration found, using defaults");
+        ESP_LOGI(TAG, "No saved configuration found, using defaults");
         return config;  // Return defaults
     }
     
@@ -63,7 +66,25 @@ logging_config_t ConfigManager::load() {
     config.obd_hz = prefs.getUShort(KEY_OBD_HZ, 10);
     config.obd_ble_enabled = prefs.getBool(KEY_OBD_BLE_ENABLED, true);
     config.log_level = prefs.getUChar(KEY_LOG_LEVEL, 3);  // Default: INFO
-    
+
+    // Load per-module log levels
+    uint16_t mod_count = prefs.getUShort("mod_count", 0);
+    if (mod_count > 0) {
+        // Load each saved module level
+        const char* module_names[] = {
+            "MAIN", "RTLogger", "STATUS", "FlashStorage", "GPS", "IMU",
+            "OBD-BLE", "WiFi", "Config", "TimeSync", "LogFileMgr"
+        };
+        for (const char* module : module_names) {
+            String key = String("mod_") + module;
+            if (prefs.isKey(key.c_str())) {
+                uint8_t level = prefs.getUChar(key.c_str(), 3);
+                config.module_log_levels[module] = level;
+            }
+        }
+    }
+    // If no saved module levels, config.module_log_levels will use constructor defaults
+
     // Load network configuration with safety checks
     size_t ssid_len = prefs.getString(KEY_NET_SSID, config.network.ssid, sizeof(config.network.ssid));
     if (ssid_len == 0 || config.network.ssid[0] == '\0') {
@@ -98,31 +119,31 @@ logging_config_t ConfigManager::load() {
     prefs.end();
     
     if (stored_checksum == 0) {
-        Serial.println("[Config] No checksum found in NVS, using defaults");
+        ESP_LOGI(TAG, "No checksum found in NVS, using defaults");
         return logging_config_t();  // Return defaults
     }
-    
+
     if (stored_checksum != calculated_checksum) {
-        Serial.printf("[Config] WARNING: Checksum mismatch! Stored: 0x%08X, Calculated: 0x%08X\n", 
-                     stored_checksum, calculated_checksum);
-        Serial.println("[Config] NVS data corrupted, using defaults");
+        ESP_LOGW(TAG, "Checksum mismatch! Stored: 0x%08X, Calculated: 0x%08X",
+                 stored_checksum, calculated_checksum);
+        ESP_LOGW(TAG, "NVS data corrupted, using defaults");
         return logging_config_t();  // Return defaults
     }
-    
-    Serial.printf("[Config] Configuration loaded from NVS (checksum: 0x%08X)\n", stored_checksum);
+
+    ESP_LOGI(TAG, "Configuration loaded from NVS (checksum: 0x%08X)", stored_checksum);
     return config;
 }
 
 bool ConfigManager::save(const logging_config_t& config) {
     if (!validate(config)) {
-        Serial.println("[Config] ERROR: Cannot save invalid configuration");
+        ESP_LOGE(TAG, "Cannot save invalid configuration");
         return false;
     }
-    
+
     Preferences prefs;
-    
+
     if (!prefs.begin(NVS_NAMESPACE, false)) {  // false = read/write
-        Serial.println("[Config] ERROR: Failed to open NVS for writing");
+        ESP_LOGE(TAG, "Failed to open NVS for writing");
         return false;
     }
     
@@ -133,7 +154,17 @@ bool ConfigManager::save(const logging_config_t& config) {
     prefs.putUShort(KEY_OBD_HZ, config.obd_hz);
     prefs.putBool(KEY_OBD_BLE_ENABLED, config.obd_ble_enabled);
     prefs.putUChar(KEY_LOG_LEVEL, config.log_level);
-    
+
+    // Save per-module log levels
+    // First, clear any old module keys
+    prefs.remove("mod_count");
+    for (const auto& entry : config.module_log_levels) {
+        String key = "mod_" + entry.first;
+        prefs.putUChar(key.c_str(), entry.second);
+    }
+    // Save count for easier loading
+    prefs.putUShort("mod_count", config.module_log_levels.size());
+
     // Save network configuration
     prefs.putString(KEY_NET_SSID, config.network.ssid);
     prefs.putString(KEY_NET_PASSWORD, config.network.password);
@@ -145,10 +176,10 @@ bool ConfigManager::save(const logging_config_t& config) {
     prefs.putUInt(KEY_CHECKSUM, checksum);
     
     prefs.end();
-    
-    Serial.printf("[Config] Configuration saved to NVS - Main: %dHz, GPS: %dHz, IMU: %dHz, OBD: %dHz (checksum: 0x%08X)\n",
-                  config.main_loop_hz, config.gps_hz, config.imu_hz, config.obd_hz, checksum);
-    
+
+    ESP_LOGI(TAG, "Configuration saved to NVS - Main: %dHz, GPS: %dHz, IMU: %dHz, OBD: %dHz (checksum: 0x%08X)",
+             config.main_loop_hz, config.gps_hz, config.imu_hz, config.obd_hz, checksum);
+
     return true;
 }
 
@@ -158,52 +189,52 @@ logging_config_t ConfigManager::get_current() {
 
 bool ConfigManager::update(const logging_config_t& config) {
     if (!validate(config)) {
-        Serial.println("[Config] ERROR: Invalid configuration provided");
+        ESP_LOGE(TAG, "Invalid configuration provided");
         return false;
     }
-    
+
     if (save(config)) {
         m_current_config = config;
-        Serial.println("[Config] Configuration updated successfully");
+        ESP_LOGI(TAG, "Configuration updated successfully");
         return true;
     }
-    
+
     return false;
 }
 
 bool ConfigManager::validate(const logging_config_t& config) {
     // Valid main loop rates: 5, 10, 20, 50, 100 Hz
-    bool valid_main = (config.main_loop_hz == 5 || 
-                       config.main_loop_hz == 10 || 
-                       config.main_loop_hz == 20 || 
-                       config.main_loop_hz == 50 || 
+    bool valid_main = (config.main_loop_hz == 5 ||
+                       config.main_loop_hz == 10 ||
+                       config.main_loop_hz == 20 ||
+                       config.main_loop_hz == 50 ||
                        config.main_loop_hz == 100);
-    
+
     if (!valid_main) {
-        Serial.printf("[Config] ERROR: Invalid main_loop_hz: %d (must be 5, 10, 20, 50, or 100)\n", 
-                     config.main_loop_hz);
+        ESP_LOGE(TAG, "Invalid main_loop_hz: %d (must be 5, 10, 20, 50, or 100)",
+                 config.main_loop_hz);
         return false;
     }
-    
+
     // Sensor rates must be <= main loop rate and within valid range (1-100 Hz)
     if (config.gps_hz < 1 || config.gps_hz > config.main_loop_hz || config.gps_hz > 100) {
-        Serial.printf("[Config] ERROR: Invalid gps_hz: %d (must be 1-%d)\n", 
-                     config.gps_hz, config.main_loop_hz);
+        ESP_LOGE(TAG, "Invalid gps_hz: %d (must be 1-%d)",
+                 config.gps_hz, config.main_loop_hz);
         return false;
     }
-    
+
     if (config.imu_hz < 1 || config.imu_hz > config.main_loop_hz || config.imu_hz > 100) {
-        Serial.printf("[Config] ERROR: Invalid imu_hz: %d (must be 1-%d)\n", 
-                     config.imu_hz, config.main_loop_hz);
+        ESP_LOGE(TAG, "Invalid imu_hz: %d (must be 1-%d)",
+                 config.imu_hz, config.main_loop_hz);
         return false;
     }
-    
+
     if (config.obd_hz < 1 || config.obd_hz > config.main_loop_hz || config.obd_hz > 100) {
-        Serial.printf("[Config] ERROR: Invalid obd_hz: %d (must be 1-%d)\n", 
-                     config.obd_hz, config.main_loop_hz);
+        ESP_LOGE(TAG, "Invalid obd_hz: %d (must be 1-%d)",
+                 config.obd_hz, config.main_loop_hz);
         return false;
     }
-    
+
     return true;
 }
 
@@ -219,21 +250,25 @@ uint32_t ConfigManager::calculate_checksum(const logging_config_t& config) {
         uint16_t gps_hz;
         uint16_t imu_hz;
         uint16_t obd_hz;
+        bool obd_ble_enabled;
+        uint8_t log_level;
         char ssid[32];
         char password[64];
         uint8_t ip[4];
         uint8_t subnet[4];
     } data;
-    
+
     data.main_loop_hz = config.main_loop_hz;
     data.gps_hz = config.gps_hz;
     data.imu_hz = config.imu_hz;
     data.obd_hz = config.obd_hz;
+    data.obd_ble_enabled = config.obd_ble_enabled;
+    data.log_level = config.log_level;
     memcpy(data.ssid, config.network.ssid, sizeof(data.ssid));
     memcpy(data.password, config.network.password, sizeof(data.password));
     memcpy(data.ip, config.network.ip, sizeof(data.ip));
     memcpy(data.subnet, config.network.subnet, sizeof(data.subnet));
-    
+
     // Calculate CRC32 checksum
     return esp_crc32_le(0, (uint8_t*)&data, sizeof(data));
 }
