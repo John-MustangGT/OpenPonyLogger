@@ -2,6 +2,9 @@
 #include "../Logger/include/debug_flags.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include <esp_log.h>
+
+static const char* TAG = "IMU";
 // ICM20948 uses register banks - must select bank before accessing registers
 #define ICM20948_REG_BANK_SEL        0x7F  // Bank 0-3 selection register
 
@@ -170,7 +173,7 @@ bool ICM20948Driver::configure_gyro() {
     // 00 = ±250dps, 01 = ±500dps, 10 = ±1000dps, 11 = ±2000dps
     // 0x00 sets bits [2:1] = 00 for ±250dps
     bool success = write_register(ICM20948_REG_GYRO_CONFIG_1, 0x00);
-    Serial.println(success ? "Gyro config OK (±250dps)" : "Gyro config FAILED");
+    ESP_LOGI(TAG, "%s", success ? "Gyro config OK (±250dps)" : "Gyro config FAILED");
     
     // Return to Bank 0 for normal data reading
     write_register(ICM20948_REG_BANK_SEL, 0x00);
@@ -187,7 +190,7 @@ bool ICM20948Driver::configure_compass() {
     // 3. Set AK09916 to continuous measurement mode
     // 4. Read data through EXT_SLV_SENS_DATA registers
     // For now, compass is disabled
-    Serial.println("WARNING: Compass not yet implemented - requires AK09916 init");
+    ESP_LOGW(TAG, "Compass not yet implemented - requires AK09916 init");
     return true;
 }
 
@@ -248,7 +251,7 @@ void ICM20948Driver::convert_accel_data(int16_t raw_x, int16_t raw_y, int16_t ra
         static uint32_t last_debug = 0;
         uint32_t now = millis();
         if (now - last_debug > 5000) {
-            Serial.printf("Accel RAW: X=%d Y=%d Z=%d\n", raw_x, raw_y, raw_z);
+            ESP_LOGI(TAG, "Accel RAW: X=%d Y=%d Z=%d", raw_x, raw_y, raw_z);
             last_debug = now;
         }
     }

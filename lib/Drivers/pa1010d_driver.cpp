@@ -3,6 +3,9 @@
 #include <cstring>
 #include <cstdlib>
 #include <ctime>
+#include <esp_log.h>
+
+static const char* TAG = "GPS";
 
 /**
  * @brief I2C Constructor (default)
@@ -95,7 +98,7 @@ bool PA1010DDriver::parse_nmea_sentence(const char* sentence) {
         static uint32_t last_print_time = 0;
         uint32_t now = millis();
         if (now - last_print_time >= 2000) {  // Print every 2 seconds
-            Serial.printf("[GPS] Last sentence: %s\n", sentence);
+            ESP_LOGI(TAG, "Last sentence: %s", sentence);
             last_print_time = now;
         }
     }
@@ -202,7 +205,7 @@ bool PA1010DDriver::parse_gprmc(const char* sentence) {
         static uint32_t last_parse_debug = 0;
         uint32_t now = millis();
         if (now - last_parse_debug >= 2000) {
-            Serial.printf("[GPS] GPRMC: valid=%d, status=%c, lat=%.6f, lon=%.6f, speed=%.1f\n", 
+            ESP_LOGI(TAG, "GPRMC: valid=%d, status=%c, lat=%.6f, lon=%.6f, speed=%.1f",
                           m_valid, status, m_data.latitude, m_data.longitude, m_data.speed);
             last_parse_debug = now;
         }
@@ -309,7 +312,7 @@ bool PA1010DDriver::parse_gpgga(const char* sentence) {
         static uint32_t last_parse_debug_gga = 0;
         uint32_t now = millis();
         if (now - last_parse_debug_gga >= 2000) {
-            Serial.printf("[GPS] GNGGA: valid=%d, fix_quality=%d, sats=%d, alt=%.1f, lat=%.6f, lon=%.6f\n", 
+            ESP_LOGI(TAG, "GNGGA: valid=%d, fix_quality=%d, sats=%d, alt=%.1f, lat=%.6f, lon=%.6f",
                           m_valid, fix_quality, sats, alt, m_data.latitude, m_data.longitude);
             last_parse_debug_gga = now;
         }
@@ -340,7 +343,7 @@ bool PA1010DDriver::read_i2c_nmea_buffer() {
         if (DebugFlags::ENABLE_GPS_DEBUG) {
             uint32_t now = millis();
             if (now - last_i2c_debug >= 2000) {
-                Serial.printf("[GPS-I2C] No bytes available (attempts=%u, sentences=%u)\n", 
+                ESP_LOGI(TAG, "No bytes available (attempts=%u, sentences=%u)",
                               read_attempts, successful_sentences);
                 last_i2c_debug = now;
             }
@@ -373,7 +376,7 @@ bool PA1010DDriver::read_i2c_nmea_buffer() {
                 if (DebugFlags::ENABLE_GPS_DEBUG) {
                     uint32_t now = millis();
                     if (now - last_i2c_debug >= 2000) {
-                        Serial.printf("[GPS-I2C] Read sentence: %d chars (attempts=%u, sentences=%u)\n", 
+                        ESP_LOGI(TAG, "Read sentence: %d chars (attempts=%u, sentences=%u)",
                                       buffer_pos, read_attempts, successful_sentences);
                         last_i2c_debug = now;
                     }
@@ -397,7 +400,7 @@ bool PA1010DDriver::read_i2c_nmea_buffer() {
         if (DebugFlags::ENABLE_GPS_DEBUG) {
             uint32_t now = millis();
             if (now - last_i2c_debug >= 2000) {
-                Serial.printf("[GPS-I2C] Buffer overflow, resetting (attempts=%u, sentences=%u)\n", 
+                ESP_LOGW(TAG, "Buffer overflow, resetting (attempts=%u, sentences=%u)",
                               read_attempts, successful_sentences);
                 last_i2c_debug = now;
             }

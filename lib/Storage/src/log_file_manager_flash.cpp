@@ -1,6 +1,9 @@
 #include "log_file_manager_flash.h"
 #include "flash_storage.h"
 #include <esp_crc.h>
+#include <esp_log.h>
+
+static const char* TAG = "LogFileMgr";
 
 const esp_partition_t* LogFileManager::s_partition = nullptr;
 FlashStorage* LogFileManager::s_flash_storage = nullptr;
@@ -22,11 +25,11 @@ bool LogFileManager::init() {
     );
     
     if (!s_partition) {
-        Serial.println("[LogFileManager] ERROR: Storage partition not found");
+        ESP_LOGE(TAG, "Storage partition not found");
         return false;
     }
     
-    Serial.printf("[LogFileManager] Found partition: %d bytes\n", s_partition->size);
+    ESP_LOGI(TAG, "Found partition: %d bytes", s_partition->size);
     s_initialized = true;
     return true;
 }
@@ -46,20 +49,20 @@ uint32_t LogFileManager::scan_log_files() {
     session_start_header_t header;
     esp_err_t err = esp_partition_read(s_partition, 0, &header, sizeof(session_start_header_t));
     if (err != ESP_OK) {
-        Serial.println("[LogFileManager] Failed to read session header");
+        ESP_LOGE(TAG, "Failed to read session header");
         return 0;
     }
     
     // Validate magic
     if (header.magic != SESSION_START_MAGIC) {
-        Serial.println("[LogFileManager] No valid session found");
+        ESP_LOGW(TAG, "No valid session found");
         return 0;
     }
     
     // Verify CRC
     uint32_t crc = esp_crc32_le(0, (uint8_t*)&header, offsetof(session_start_header_t, crc32));
     if (crc != header.crc32) {
-        Serial.println("[LogFileManager] Session header CRC mismatch");
+        ESP_LOGW(TAG, "Session header CRC mismatch");
         return 0;
     }
     
@@ -74,8 +77,8 @@ uint32_t LogFileManager::scan_log_files() {
     info.block_count = 0;  // Will be counted during stream
     
     s_log_files.push_back(info);
-    
-    Serial.printf("[LogFileManager] Found session: %d bytes\n", info.file_size);
+
+    ESP_LOGI(TAG, "Found session: %zu bytes", info.file_size);
     return 1;
 }
 
@@ -89,10 +92,10 @@ void LogFileManager::set_download_active(bool active) {
     if (s_flash_storage) {
         if (active) {
             s_flash_storage->pause();
-            Serial.println("[LogFileManager] Logging paused for download");
+            ESP_LOGI(TAG, "Logging paused for download");
         } else {
             s_flash_storage->resume();
-            Serial.println("[LogFileManager] Logging resumed after download");
+            ESP_LOGI(TAG, "Logging resumed after download");
         }
     }
 }
@@ -111,8 +114,8 @@ size_t LogFileManager::stream_to_client(Stream& output) {
     
     // Get current write position (total data size)
     size_t data_size = s_flash_storage->get_write_offset();
-    
-    Serial.printf("[LogFileManager] Streaming %d bytes to client...\n", data_size);
+
+    ESP_LOGI(TAG, "Streaming %zu bytes to client...", data_size);
     
     // Stream data in chunks
     for (size_t offset = 0; offset < data_size; offset += chunk_size) {
@@ -124,22 +127,22 @@ size_t LogFileManager::stream_to_client(Stream& output) {
         // Read from flash
         esp_err_t err = esp_partition_read(s_partition, offset, buffer, to_read);
         if (err != ESP_OK) {
-            Serial.printf("[LogFileManager] Read error at offset %d\n", offset);
+            ESP_LOGE(TAG, "Read error at offset %zu", offset);
             break;
         }
         
         // Write to client
         size_t written = output.write(buffer, to_read);
         if (written != to_read) {
-            Serial.printf("[LogFileManager] Client write error: %d != %d\n", written, to_read);
+            ESP_LOGE(TAG, "Client write error: %zu != %zu", written, to_read);
             break;
         }
         
         total_written += written;
-        
+
         // Progress indicator
         if (offset % (32 * 1024) == 0) {
-            Serial.printf("[LogFileManager] Streamed %d / %d bytes (%.1f%%)\n",
+            ESP_LOGD(TAG, "Streamed %zu / %zu bytes (%.1f%%)",
                          offset, data_size, (offset * 100.0f) / data_size);
         }
         
@@ -149,8 +152,8 @@ size_t LogFileManager::stream_to_client(Stream& output) {
         }
     }
     
-    Serial.printf("[LogFileManager] Stream complete: %d bytes\n", total_written);
-    
+    ESP_LOGI(TAG, "Stream complete: %zu bytes", total_written);
+
     // Resume logging
     set_download_active(false);
     
@@ -187,7 +190,7 @@ size_t LogFileManager::read_flash(size_t offset, uint8_t* buffer, size_t size) {
 
     esp_err_t err = esp_partition_read(s_partition, offset, buffer, to_read);
     if (err != ESP_OK) {
-        Serial.printf("[LogFileManager] Read failed at %zu: %d\n", offset, err);
+        ESP_LOGE(TAG, "Read failed at %zu: %d", offset, err);
         // Decrement ref count on error
         if (s_download_ref_count > 0) {
             s_download_ref_count--;
@@ -205,8 +208,8 @@ bool LogFileManager::erase_all_data() {
     if (!s_partition) {
         return false;
     }
-    
-    Serial.println("[LogFileManager] Erasing partition...");
+
+    ESP_LOGI(TAG, "Erasing partition...");
     
     // Pause logging
     set_download_active(true);
@@ -216,9 +219,9 @@ bool LogFileManager::erase_all_data() {
     
     // Resume logging (will start fresh)
     set_download_active(false);
-    
+
     if (err != ESP_OK) {
-        Serial.printf("[LogFileManager] Erase failed: %d\n", err);
+        ESP_LOGE(TAG, "Erase failed: %d", err);
         return false;
     }
     

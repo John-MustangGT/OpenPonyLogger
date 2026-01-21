@@ -6,6 +6,9 @@
 #include "log_file_manager_flash.h"  // Flash-based file manager
 #include <cstdio>
 #include <ArduinoJson.h>
+#include <esp_log.h>
+
+static const char* TAG = "WiFi";
 
 // Static member initialization
 AsyncWebServer* WiFiManager::m_server = nullptr;
@@ -18,100 +21,100 @@ bool WiFiManager::init() {
     if (m_initialized) {
         return true;
     }
-    
-    Serial.println("[WiFi] Initializing WiFi in AP mode...");
-    
+
+    ESP_LOGI(TAG, "Initializing WiFi in AP mode...");
+
     // Ensure ConfigManager is initialized
     if (!ConfigManager::init()) {
-        Serial.println("[WiFi] WARNING: ConfigManager not ready, using defaults");
+        ESP_LOGW(TAG, "ConfigManager not ready, using defaults");
     }
-    
+
     // Get configuration with fallback
     logging_config_t config = ConfigManager::get_current();
-    
+
     // Validate network config has valid data, use defaults if not
     if (config.network.ssid[0] == '\0' || strlen(config.network.ssid) == 0) {
-        Serial.println("[WiFi] WARNING: Invalid SSID in config, using default");
+        ESP_LOGW(TAG, "Invalid SSID in config, using default");
         strncpy(config.network.ssid, "PonyLogger", sizeof(config.network.ssid) - 1);
         config.network.ssid[sizeof(config.network.ssid) - 1] = '\0';
     }
-    
+
     // Generate SSID from config + MAC address suffix
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    
+
     char ssid_buffer[32];
-    snprintf(ssid_buffer, sizeof(ssid_buffer), "%s-%02X%02X", 
+    snprintf(ssid_buffer, sizeof(ssid_buffer), "%s-%02X%02X",
              config.network.ssid, mac[4], mac[5]);
     m_ssid = String(ssid_buffer);
     m_password = String(config.network.password);
-    
-    Serial.printf("[WiFi] Starting AP with SSID: %s\n", m_ssid.c_str());
-    
+
+    ESP_LOGI(TAG, "Starting AP with SSID: %s", m_ssid.c_str());
+
     // Configure AP mode
     WiFi.mode(WIFI_AP);
     WiFi.softAP(m_ssid.c_str(), m_password.length() > 0 ? m_password.c_str() : nullptr);
-    
+
     // Validate IP configuration
-    IPAddress ap_ip(config.network.ip[0], config.network.ip[1], 
+    IPAddress ap_ip(config.network.ip[0], config.network.ip[1],
                      config.network.ip[2], config.network.ip[3]);
-    IPAddress netmask(config.network.subnet[0], config.network.subnet[1], 
+    IPAddress netmask(config.network.subnet[0], config.network.subnet[1],
                       config.network.subnet[2], config.network.subnet[3]);
-    
+
     // Use defaults if IP is invalid (0.0.0.0)
-    if (config.network.ip[0] == 0 && config.network.ip[1] == 0 && 
+    if (config.network.ip[0] == 0 && config.network.ip[1] == 0 &&
         config.network.ip[2] == 0 && config.network.ip[3] == 0) {
-        Serial.println("[WiFi] WARNING: Invalid IP in config, using 192.168.4.1");
+        ESP_LOGW(TAG, "Invalid IP in config, using 192.168.4.1");
         ap_ip = IPAddress(192, 168, 4, 1);
         netmask = IPAddress(255, 255, 255, 0);
     }
-    
+
     WiFi.softAPConfig(ap_ip, ap_ip, netmask);
-    
+
     IPAddress ip = WiFi.softAPIP();
-    Serial.printf("[WiFi] AP IP Address: %s\n", ip.toString().c_str());
-    
+    ESP_LOGI(TAG, "AP IP Address: %s", ip.toString().c_str());
+
     // Create web server
     m_server = new AsyncWebServer(80);
-    
+
     if (m_server == nullptr) {
-        Serial.println("[WiFi] ERROR: Failed to allocate AsyncWebServer");
+        ESP_LOGE(TAG, "Failed to allocate AsyncWebServer");
         return false;
     }
-    
+
     // Create WebSocket handler
     m_websocket = new AsyncWebSocket("/ws");
-    
+
     if (m_websocket == nullptr) {
-        Serial.println("[WiFi] ERROR: Failed to allocate AsyncWebSocket");
+        ESP_LOGE(TAG, "Failed to allocate AsyncWebSocket");
         delete m_server;
         m_server = nullptr;
         return false;
     }
-    
+
     // Set up WebSocket event handler
     m_websocket->onEvent(handle_websocket_event);
     m_server->addHandler(m_websocket);
-    
+
     // Set up HTTP routes
     m_server->on("/", HTTP_GET, handle_root);
     m_server->on("/api/config", HTTP_GET, handle_config_get);
     m_server->on("/api/config", HTTP_POST, [](AsyncWebServerRequest* request){}, nullptr, handle_config_post);
     m_server->on("/api/about", HTTP_GET, handle_about);
     m_server->on("/api/restart", HTTP_POST, handle_restart);
-    
+
     // Log file management routes
     m_server->on("/api/logs", HTTP_GET, handle_logs_list);
     m_server->on("/api/logs/download", HTTP_GET, handle_log_download);
     m_server->on("/api/logs/delete", HTTP_POST, handle_log_delete);
     m_server->on("/api/logs/delete-all", HTTP_POST, handle_logs_delete_all);
-    
+
     // Start server
     m_server->begin();
-    Serial.println("[WiFi] Web server started on port 80");
-    Serial.println("[WiFi] WebSocket endpoint: /ws");
-    Serial.printf("[WiFi] Open http://%s in your browser\n", ip.toString().c_str());
-    
+    ESP_LOGI(TAG, "Web server started on port 80");
+    ESP_LOGI(TAG, "WebSocket endpoint: /ws");
+    ESP_LOGI(TAG, "Open http://%s in your browser", ip.toString().c_str());
+
     m_initialized = true;
     return true;
 }
@@ -135,17 +138,17 @@ bool WiFiManager::has_clients() {
 
 void WiFiManager::broadcast_json(const char* json) {
     if (m_websocket == nullptr || json == nullptr) return;
-    
+
     // Verify we have clients before broadcasting
     if (m_websocket->count() == 0) return;
-    
+
     // Check json string length to prevent crashes
     size_t len = strlen(json);
     if (len == 0 || len > 2048) {
-        Serial.printf("[WiFi] Invalid JSON length: %d\n", len);
+        ESP_LOGW(TAG, "Invalid JSON length: %zu", len);
         return;
     }
-    
+
     // Send to all connected clients
     m_websocket->textAll(json);
 }
@@ -159,16 +162,16 @@ void WiFiManager::handle_root(AsyncWebServerRequest* request) {
 }
 
 void WiFiManager::handle_config_get(AsyncWebServerRequest* request) {
-    Serial.println("[WiFi] handle_config_get called");
-    
+    ESP_LOGD(TAG, "handle_config_get called");
+
     if (!ConfigManager::init()) {
-        Serial.println("[WiFi] ERROR: Config manager not initialized");
+        ESP_LOGE(TAG, "Config manager not initialized");
         request->send(500, "application/json", "{\"success\":false,\"error\":\"Config not initialized\"}");
         return;
     }
-    
+
     logging_config_t config = ConfigManager::get_current();
-    
+
     // Use larger document size for all the data
     JsonDocument doc;
     doc["main_loop_hz"] = config.main_loop_hz;
@@ -176,22 +179,22 @@ void WiFiManager::handle_config_get(AsyncWebServerRequest* request) {
     doc["imu_hz"] = config.imu_hz;
     doc["obd_hz"] = config.obd_hz;
     doc["obd_ble_enabled"] = config.obd_ble_enabled;
-    
+
     // Add network configuration with null-termination safety
     JsonObject network = doc["network"].to<JsonObject>();
     network["ssid"] = String(config.network.ssid);
     network["password"] = String(config.network.password);
     char ip_str[16];
-    snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d", 
+    snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d",
              config.network.ip[0], config.network.ip[1], config.network.ip[2], config.network.ip[3]);
     network["ip"] = ip_str;
     char subnet_str[16];
-    snprintf(subnet_str, sizeof(subnet_str), "%d.%d.%d.%d", 
+    snprintf(subnet_str, sizeof(subnet_str), "%d.%d.%d.%d",
              config.network.subnet[0], config.network.subnet[1], config.network.subnet[2], config.network.subnet[3]);
     network["subnet"] = subnet_str;
-    
-    Serial.printf("[WiFi] Network config - SSID: %s, IP: %s\n", config.network.ssid, ip_str);
-    
+
+    ESP_LOGD(TAG, "Network config - SSID: %s, IP: %s", config.network.ssid, ip_str);
+
     // Add PID configurations only if map is not empty
     JsonArray pids = doc["pids"].to<JsonArray>();
     if (!config.pid_configs.empty()) {
@@ -206,22 +209,22 @@ void WiFiManager::handle_config_get(AsyncWebServerRequest* request) {
             pid_obj["name"] = pid_pair.second.name;
         }
     }
-    
+
     String json_str;
     serializeJson(doc, json_str);
-    
-    Serial.printf("[WiFi] Sending config response (%d bytes)\n", json_str.length());
+
+    ESP_LOGD(TAG, "Sending config response (%zu bytes)", json_str.length());
     request->send(200, "application/json", json_str);
 }
 
 void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-    Serial.printf("[WiFi] handle_config_post called (len=%d, total=%d)\n", len, total);
-    
+    ESP_LOGD(TAG, "handle_config_post called (len=%zu, total=%zu)", len, total);
+
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, (const char*)data, len);
-    
+
     if (error) {
-        Serial.printf("[WiFi] JSON parse error: %s\n", error.c_str());
+        ESP_LOGE(TAG, "JSON parse error: %s", error.c_str());
         request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON\"}");
         return;
     }
@@ -338,9 +341,9 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
 }
 
 void WiFiManager::handle_restart(AsyncWebServerRequest* request) {
-    Serial.println("[WiFi] Restart requested via web interface");
+    ESP_LOGI(TAG, "Restart requested via web interface");
     request->send(200, "application/json", "{\"success\":true,\"message\":\"Restarting device...\"}");
-    
+
     // Delay restart to allow response to be sent
     delay(500);
     ESP.restart();

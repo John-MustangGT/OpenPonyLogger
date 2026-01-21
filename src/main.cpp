@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <esp_sleep.h>
+#include <esp_log.h>
 #include "sensor_hal.h"
 #include "pa1010d_driver.h"
 #include "icm20948_driver.h"
@@ -199,16 +200,14 @@ void setup() {
     // ESP32-S3 uses USB CDC for Serial
     Serial.begin(115200);
     delay(2000);  // Longer delay for USB CDC to stabilize
-    
+
     // Send simple test without any formatting
-    Serial.write("BOOT\n");
-    Serial.write("BOOT\n");
-    Serial.write("BOOT\n");
-    Serial.flush();
+    ESP_LOGI(TAG, "BOOT");
+    ESP_LOGI(TAG, "BOOT");
+    ESP_LOGI(TAG, "BOOT");
     delay(500);
-    
-    Serial.println("\n\n\n=== BOOT START ===");
-    Serial.flush();
+
+    ESP_LOGI(TAG, "=== BOOT START ===");
     
     // Check wake-up cause
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
@@ -217,85 +216,68 @@ void setup() {
     
     switch (wakeup_reason) {
         case ESP_SLEEP_WAKEUP_EXT0:
-            Serial.println("▶ Woke from deep sleep: USB power restored (GPIO19)");
+            ESP_LOGI(TAG, "▶ Woke from deep sleep: USB power restored (GPIO19)");
             woke_from_usb = true;
             break;
         case ESP_SLEEP_WAKEUP_EXT1:
-            Serial.println("▶ Woke from deep sleep: Button press (GPIO0)");
+            ESP_LOGI(TAG, "▶ Woke from deep sleep: Button press (GPIO0)");
             woke_from_button = true;
             break;
         case ESP_SLEEP_WAKEUP_UNDEFINED:
         default:
-            Serial.println("▶ Normal boot (not from deep sleep)");
+            ESP_LOGI(TAG, "▶ Normal boot (not from deep sleep)");
             break;
     }
-    Serial.flush();
     
     // Initialize serial communication for debugging
     // ESP32-S3 needs extra time to establish USB JTAG connection
     reporter.init(115200);
-    
+
     // Wait longer for USB JTAG to fully establish
-    Serial.println("Waiting for USB JTAG...");
+    ESP_LOGI(TAG, "Waiting for USB JTAG...");
     for (int i = 0; i < 20; i++) {
         delay(100);
-        Serial.print(".");
     }
-    Serial.println("");
-    Serial.println("After dots - about to print header");
-    Serial.flush();
+    ESP_LOGI(TAG, "After dots - about to print header");
     
-    Serial.println("╔═══════════════════════════════════════════════════════════╗");
-    Serial.println("║        OpenPonyLogger - Real-Time Data Logger              ║");
-    Serial.println("║              ESP32-S3 Feather TFT                          ║");
-    Serial.println("╚═══════════════════════════════════════════════════════════╝");
-    Serial.flush();
-    
+    ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║        OpenPonyLogger - Real-Time Data Logger              ║");
+    ESP_LOGI(TAG, "║              ESP32-S3 Feather TFT                          ║");
+    ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════════════╝");
+
     // Initialize VBUS detection pin
     pinMode(VBUS_DETECT_PIN, INPUT);
-    Serial.println("✓ USB power detection enabled (GPIO19)");
-    Serial.flush();
+    ESP_LOGI(TAG, "✓ USB power detection enabled (GPIO19)");
     
-    Serial.println("▶ Initializing hardware...");
-    Serial.flush();
-    
+    ESP_LOGI(TAG, "▶ Initializing hardware...");
+
     // Initialize display
-    Serial.println("▶ Initializing ST7789 Display...");
-    Serial.flush();
+    ESP_LOGI(TAG, "▶ Initializing ST7789 Display...");
     if (!ST7789Display::init()) {
-        Serial.println("⚠ WARNING: Display initialization failed, continuing with serial output only");
-        Serial.flush();
+        ESP_LOGW(TAG, "⚠ WARNING: Display initialization failed, continuing with serial output only");
     } else {
-        Serial.println("✓ Display initialized");
-        Serial.flush();
+        ESP_LOGI(TAG, "✓ Display initialized");
     }
     
     // Initialize NeoPixel status indicator
-    Serial.println("▶ Initializing NeoPixel Status Indicator...");
-    Serial.flush();
+    ESP_LOGI(TAG, "▶ Initializing NeoPixel Status Indicator...");
     if (!NeoPixelStatus::init()) {
-        Serial.println("⚠ WARNING: NeoPixel initialization failed");
-        Serial.flush();
+        ESP_LOGW(TAG, "⚠ WARNING: NeoPixel initialization failed");
     } else {
-        Serial.println("✓ NeoPixel initialized (Booting - Red)");
-        Serial.flush();
+        ESP_LOGI(TAG, "✓ NeoPixel initialized (Booting - Red)");
     }
     
     // Initialize buttons
-    Serial.println("▶ Initializing buttons...");
-    Serial.flush();
+    ESP_LOGI(TAG, "▶ Initializing buttons...");
     pinMode(BUTTON_D0, INPUT_PULLUP);  // D0: Pause/Resume (pulled HIGH, goes LOW when pressed)
     pinMode(BUTTON_D1, INPUT);         // D1: Cycle display (pulled LOW by default, goes HIGH when pressed)
     pinMode(BUTTON_D2, INPUT);         // D2: Mark Event (pulled LOW by default, goes HIGH when pressed)
-    Serial.println("✓ Buttons initialized (D0: GPIO0-pullup, D1: GPIO1-wake, D2: GPIO2-wake)");
-    Serial.flush();
+    ESP_LOGI(TAG, "✓ Buttons initialized (D0: GPIO0-pullup, D1: GPIO1-wake, D2: GPIO2-wake)");
     
     // Initialize configuration manager
-    Serial.println("▶ Initializing Configuration Manager...");
-    Serial.flush();
+    ESP_LOGI(TAG, "▶ Initializing Configuration Manager...");
     if (!ConfigManager::init()) {
-        Serial.println("⚠ WARNING: Failed to initialize configuration manager, using defaults");
-        Serial.flush();
+        ESP_LOGW(TAG, "⚠ WARNING: Failed to initialize configuration manager, using defaults");
     }
     
     // Get current configuration
