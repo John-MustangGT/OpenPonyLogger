@@ -20,6 +20,11 @@ const char* ConfigManager::KEY_MARRIED_VIN = "married_vin";
 const char* ConfigManager::KEY_MARRIED_ECU = "married_ecu";
 const char* ConfigManager::KEY_IS_MARRIED = "is_married";
 const char* ConfigManager::KEY_LOG_LEVEL = "log_level";
+const char* ConfigManager::KEY_DYN_AUTO_EN = "dyn_auto_en";
+const char* ConfigManager::KEY_DYN_START_SPD = "dyn_start_spd";
+const char* ConfigManager::KEY_DYN_STOP_TMO = "dyn_stop_tmo";
+const char* ConfigManager::KEY_DATA_AUTO_EN = "data_auto_en";
+const char* ConfigManager::KEY_DATA_STOP_TMO = "data_stop_tmo";
 const char* ConfigManager::KEY_NET_SSID = "net_ssid";
 const char* ConfigManager::KEY_NET_PASSWORD = "net_password";
 const char* ConfigManager::KEY_NET_IP = "net_ip";
@@ -106,6 +111,13 @@ logging_config_t ConfigManager::load() {
         }
     }
     // If no saved module levels, config.module_log_levels will use constructor defaults
+
+    // Load auto-logging configuration
+    config.dynamics_auto_enabled = prefs.getBool(KEY_DYN_AUTO_EN, false);
+    config.dynamics_start_speed_mph = prefs.getUChar(KEY_DYN_START_SPD, 5);
+    config.dynamics_stop_timeout_sec = prefs.getUShort(KEY_DYN_STOP_TMO, 30);
+    config.data_auto_enabled = prefs.getBool(KEY_DATA_AUTO_EN, false);
+    config.data_stop_timeout_sec = prefs.getUShort(KEY_DATA_STOP_TMO, 300);
 
     // Load network configuration with safety checks
     size_t ssid_len = prefs.getString(KEY_NET_SSID, config.network.ssid, sizeof(config.network.ssid));
@@ -199,6 +211,13 @@ bool ConfigManager::save(const logging_config_t& config) {
     // Save count for easier loading
     prefs.putUShort("mod_count", config.module_log_levels.size());
 
+    // Save auto-logging configuration
+    prefs.putBool(KEY_DYN_AUTO_EN, config.dynamics_auto_enabled);
+    prefs.putUChar(KEY_DYN_START_SPD, config.dynamics_start_speed_mph);
+    prefs.putUShort(KEY_DYN_STOP_TMO, config.dynamics_stop_timeout_sec);
+    prefs.putBool(KEY_DATA_AUTO_EN, config.data_auto_enabled);
+    prefs.putUShort(KEY_DATA_STOP_TMO, config.data_stop_timeout_sec);
+
     // Save network configuration
     prefs.putString(KEY_NET_SSID, config.network.ssid);
     prefs.putString(KEY_NET_PASSWORD, config.network.password);
@@ -286,6 +305,11 @@ uint32_t ConfigManager::calculate_checksum(const logging_config_t& config) {
         uint16_t obd_hz;
         bool obd_ble_enabled;
         uint8_t log_level;
+        bool dynamics_auto_enabled;
+        uint8_t dynamics_start_speed_mph;
+        uint16_t dynamics_stop_timeout_sec;
+        bool data_auto_enabled;
+        uint16_t data_stop_timeout_sec;
         char ssid[32];
         char password[64];
         uint8_t ip[4];
@@ -298,6 +322,11 @@ uint32_t ConfigManager::calculate_checksum(const logging_config_t& config) {
     data.obd_hz = config.obd_hz;
     data.obd_ble_enabled = config.obd_ble_enabled;
     data.log_level = config.log_level;
+    data.dynamics_auto_enabled = config.dynamics_auto_enabled;
+    data.dynamics_start_speed_mph = config.dynamics_start_speed_mph;
+    data.dynamics_stop_timeout_sec = config.dynamics_stop_timeout_sec;
+    data.data_auto_enabled = config.data_auto_enabled;
+    data.data_stop_timeout_sec = config.data_stop_timeout_sec;
     memcpy(data.ssid, config.network.ssid, sizeof(data.ssid));
     memcpy(data.password, config.network.password, sizeof(data.password));
     memcpy(data.ip, config.network.ip, sizeof(data.ip));

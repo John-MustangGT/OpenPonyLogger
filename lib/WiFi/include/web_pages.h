@@ -306,6 +306,53 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                 </div>
 
                 <div class="config-section">
+                    <h3>Auto-Start/Stop Configuration</h3>
+                    <p style="color: #aaa; font-size: 13px; margin-bottom: 15px;">Automatically start and stop logging based on vehicle conditions. No more wasted storage on meaningless data!</p>
+
+                    <div style="margin-bottom: 25px;">
+                        <h4 style="color: #4a9eff; margin-bottom: 10px; font-size: 16px;">🏁 Dynamics Logging (GPS/IMU)</h4>
+                        <p style="color: #888; font-size: 12px; margin-bottom: 10px;">For track days and performance driving. Automatically logs when moving.</p>
+
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                <input type="checkbox" id="dynamics-auto-enabled" name="dynamics_auto_enabled" style="width: auto; margin: 0;">
+                                <span>Enable Dynamics Auto-Start/Stop</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="dynamics-start-speed">Start logging when speed exceeds (mph)</label>
+                            <input type="number" id="dynamics-start-speed" name="dynamics_start_speed_mph" min="1" max="30" value="5">
+                            <div style="color: #888; font-size: 12px; margin-top: 5px;">Logging starts when vehicle speed > this threshold</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="dynamics-stop-timeout">Stop logging after being stopped for (seconds)</label>
+                            <input type="number" id="dynamics-stop-timeout" name="dynamics_stop_timeout_sec" min="5" max="300" value="30">
+                            <div style="color: #888; font-size: 12px; margin-top: 5px;">Logging stops after vehicle is stopped for this duration</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <h4 style="color: #4a9eff; margin-bottom: 10px; font-size: 16px;">🔧 Data Logging (OBD)</h4>
+                        <p style="color: #888; font-size: 12px; margin-bottom: 10px;">For daily driving and diagnostics. Automatically logs when engine running.</p>
+
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                <input type="checkbox" id="data-auto-enabled" name="data_auto_enabled" style="width: auto; margin: 0;">
+                                <span>Enable Data Auto-Start/Stop</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="data-stop-timeout">Stop logging after engine off for (seconds)</label>
+                            <input type="number" id="data-stop-timeout" name="data_stop_timeout_sec" min="60" max="600" value="300">
+                            <div style="color: #888; font-size: 12px; margin-top: 5px;">Logging stops after engine is off for this duration (5 minutes default)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="config-section">
                     <h3>Logging Configuration</h3>
                     <p style="color: #aaa; font-size: 13px; margin-bottom: 15px;">Control debug output verbosity. Changes take effect immediately without restart.</p>
 
@@ -806,6 +853,23 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                         }
                     });
                 }
+
+                // Load auto-logging configuration if present
+                if (config.dynamics_auto_enabled !== undefined) {
+                    document.getElementById('dynamics-auto-enabled').checked = config.dynamics_auto_enabled;
+                }
+                if (config.dynamics_start_speed_mph !== undefined) {
+                    document.getElementById('dynamics-start-speed').value = config.dynamics_start_speed_mph;
+                }
+                if (config.dynamics_stop_timeout_sec !== undefined) {
+                    document.getElementById('dynamics-stop-timeout').value = config.dynamics_stop_timeout_sec;
+                }
+                if (config.data_auto_enabled !== undefined) {
+                    document.getElementById('data-auto-enabled').checked = config.data_auto_enabled;
+                }
+                if (config.data_stop_timeout_sec !== undefined) {
+                    document.getElementById('data-stop-timeout').value = config.data_stop_timeout_sec;
+                }
             } catch (e) {
                 showStatus('config-status', 'Failed to load configuration', 'error');
             }
@@ -824,6 +888,11 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
                 obd_hz: parseInt(document.getElementById('obd-hz').value),
                 obd_ble_enabled: document.getElementById('obd-ble-enabled').checked,
                 log_level: parseInt(document.getElementById('log-level').value),
+                dynamics_auto_enabled: document.getElementById('dynamics-auto-enabled').checked,
+                dynamics_start_speed_mph: parseInt(document.getElementById('dynamics-start-speed').value),
+                dynamics_stop_timeout_sec: parseInt(document.getElementById('dynamics-stop-timeout').value),
+                data_auto_enabled: document.getElementById('data-auto-enabled').checked,
+                data_stop_timeout_sec: parseInt(document.getElementById('data-stop-timeout').value),
                 network: {
                     ssid: document.getElementById('net-ssid').value,
                     password: document.getElementById('net-password').value,

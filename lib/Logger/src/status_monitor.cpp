@@ -279,7 +279,94 @@ void StatusMonitor::task_loop() {
             }
         }
         d2_last_state = d2_state;
-        
+
+        // ===== Auto-Start/Stop Logic =====
+        // Separate auto-start/stop for dynamics (GPS/IMU) vs data (OBD)
+        static uint32_t dynamics_stopped_since = 0;  // When vehicle stopped (for timeout)
+        static uint32_t data_stopped_since = 0;      // When engine stopped (for timeout)
+        static bool dynamics_was_moving = false;     // Track if we were moving
+        static bool data_was_running = false;        // Track if engine was running
+
+        logging_config_t config = ConfigManager::get_current();
+
+        if (m_rt_logger != nullptr) {
+            // Get current sensor data
+            gps_data_t gps = m_rt_logger->get_last_gps();
+            obd_data_t obd = IcarBleDriver::get_data();
+
+            // === Dynamics Auto-Start/Stop (Speed-based) ===
+            if (config.dynamics_auto_enabled) {
+                float speed_mph = gps.speed * 0.621371f;  // Convert km/h to mph
+                bool is_moving = (speed_mph > config.dynamics_start_speed_mph);
+
+                if (is_moving && !dynamics_was_moving) {
+                    // Started moving - auto-resume if paused
+                    if (m_rt_logger->is_storage_paused()) {
+                        m_rt_logger->resume_storage();
+                        ESP_LOGI(TAG, "[Auto] Dynamics auto-started (speed: %.1f mph)", speed_mph);
+                    }
+                    dynamics_stopped_since = 0;
+                    dynamics_was_moving = true;
+
+                } else if (!is_moving && dynamics_was_moving) {
+                    // Stopped - start timeout
+                    if (dynamics_stopped_since == 0) {
+                        dynamics_stopped_since = now;
+                        ESP_LOGD(TAG, "[Auto] Vehicle stopped, starting %ds timeout", config.dynamics_stop_timeout_sec);
+                    }
+                    dynamics_was_moving = false;
+
+                } else if (!is_moving && dynamics_stopped_since > 0) {
+                    // Still stopped - check timeout
+                    uint32_t stopped_duration_sec = (now - dynamics_stopped_since) / 1000;
+                    if (stopped_duration_sec >= config.dynamics_stop_timeout_sec) {
+                        // Timeout expired - auto-pause
+                        if (!m_rt_logger->is_storage_paused()) {
+                            m_rt_logger->pause_storage();
+                            ESP_LOGI(TAG, "[Auto] Dynamics auto-stopped (stopped for %ds)", stopped_duration_sec);
+                        }
+                        dynamics_stopped_since = 0;
+                    }
+                }
+            }
+
+            // === Data Auto-Start/Stop (Engine-based) ===
+            if (config.data_auto_enabled && obd.valid) {
+                // Engine running if RPM > 0 or speed > 0
+                bool engine_running = (obd.rpm > 0 || obd.speed > 0);
+
+                if (engine_running && !data_was_running) {
+                    // Engine started - auto-resume if paused
+                    if (m_rt_logger->is_storage_paused()) {
+                        m_rt_logger->resume_storage();
+                        ESP_LOGI(TAG, "[Auto] Data auto-started (engine running: RPM=%d)", obd.rpm);
+                    }
+                    data_stopped_since = 0;
+                    data_was_running = true;
+
+                } else if (!engine_running && data_was_running) {
+                    // Engine stopped - start timeout
+                    if (data_stopped_since == 0) {
+                        data_stopped_since = now;
+                        ESP_LOGD(TAG, "[Auto] Engine stopped, starting %ds timeout", config.data_stop_timeout_sec);
+                    }
+                    data_was_running = false;
+
+                } else if (!engine_running && data_stopped_since > 0) {
+                    // Engine still off - check timeout
+                    uint32_t stopped_duration_sec = (now - data_stopped_since) / 1000;
+                    if (stopped_duration_sec >= config.data_stop_timeout_sec) {
+                        // Timeout expired - auto-pause
+                        if (!m_rt_logger->is_storage_paused()) {
+                            m_rt_logger->pause_storage();
+                            ESP_LOGI(TAG, "[Auto] Data auto-stopped (engine off for %ds)", stopped_duration_sec);
+                        }
+                        data_stopped_since = 0;
+                    }
+                }
+            }
+        }
+
         // ===== USB Power Monitoring =====
         // Dual detection method: GPIO19 + battery voltage
         // GPIO19 should read HIGH when USB connected, but may be unreliable

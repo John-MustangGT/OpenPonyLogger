@@ -68,6 +68,16 @@ struct logging_config_t {
     // Allows fine-grained control: {"GPS": 4, "OBD-BLE": 0, "FlashStorage": 2}
     std::map<String, uint8_t> module_log_levels;
 
+    // Auto-start/stop configuration
+    // Dynamics: GPS/IMU logging (track/performance use)
+    bool dynamics_auto_enabled;           // Enable auto-start/stop for dynamics
+    uint8_t dynamics_start_speed_mph;     // Start logging when speed > this (mph)
+    uint16_t dynamics_stop_timeout_sec;   // Stop after being stopped for this long (seconds)
+
+    // Data: OBD logging (diagnostic/monitoring use)
+    bool data_auto_enabled;               // Enable auto-start/stop for data
+    uint16_t data_stop_timeout_sec;       // Stop after engine off for this long (seconds)
+
     // Network configuration
     network_config_t network;
     
@@ -77,7 +87,9 @@ struct logging_config_t {
     // Default constructor with 10Hz across the board
     logging_config_t()
         : main_loop_hz(10), gps_hz(10), imu_hz(10), obd_hz(10), obd_ble_enabled(true),
-          is_married(false), log_level(3) {
+          is_married(false), log_level(3),
+          dynamics_auto_enabled(false), dynamics_start_speed_mph(5), dynamics_stop_timeout_sec(30),
+          data_auto_enabled(false), data_stop_timeout_sec(300) {
         married_vin[0] = '\0';
         married_ecu[0] = '\0';
         // Initialize core PIDs (enabled by default at 10Hz)
@@ -217,6 +229,11 @@ private:
     static const char* KEY_MARRIED_ECU;
     static const char* KEY_IS_MARRIED;
     static const char* KEY_LOG_LEVEL;
+    static const char* KEY_DYN_AUTO_EN;
+    static const char* KEY_DYN_START_SPD;
+    static const char* KEY_DYN_STOP_TMO;
+    static const char* KEY_DATA_AUTO_EN;
+    static const char* KEY_DATA_STOP_TMO;
     static const char* KEY_NET_SSID;
     static const char* KEY_NET_PASSWORD;
     static const char* KEY_NET_IP;

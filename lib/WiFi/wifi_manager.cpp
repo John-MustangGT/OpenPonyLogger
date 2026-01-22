@@ -181,6 +181,11 @@ void WiFiManager::handle_config_get(AsyncWebServerRequest* request) {
     doc["obd_hz"] = config.obd_hz;
     doc["obd_ble_enabled"] = config.obd_ble_enabled;
     doc["log_level"] = config.log_level;
+    doc["dynamics_auto_enabled"] = config.dynamics_auto_enabled;
+    doc["dynamics_start_speed_mph"] = config.dynamics_start_speed_mph;
+    doc["dynamics_stop_timeout_sec"] = config.dynamics_stop_timeout_sec;
+    doc["data_auto_enabled"] = config.data_auto_enabled;
+    doc["data_stop_timeout_sec"] = config.data_stop_timeout_sec;
 
     // Add network configuration with null-termination safety
     JsonObject network = doc["network"].to<JsonObject>();
@@ -258,6 +263,23 @@ void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* da
             uint8_t level = kv.value().as<uint8_t>();
             config.module_log_levels[module_name] = level;
         }
+    }
+
+    // Parse auto-logging configuration if provided
+    if (doc.containsKey("dynamics_auto_enabled")) {
+        config.dynamics_auto_enabled = doc["dynamics_auto_enabled"] | false;
+    }
+    if (doc.containsKey("dynamics_start_speed_mph")) {
+        config.dynamics_start_speed_mph = doc["dynamics_start_speed_mph"] | 5;
+    }
+    if (doc.containsKey("dynamics_stop_timeout_sec")) {
+        config.dynamics_stop_timeout_sec = doc["dynamics_stop_timeout_sec"] | 30;
+    }
+    if (doc.containsKey("data_auto_enabled")) {
+        config.data_auto_enabled = doc["data_auto_enabled"] | false;
+    }
+    if (doc.containsKey("data_stop_timeout_sec")) {
+        config.data_stop_timeout_sec = doc["data_stop_timeout_sec"] | 300;
     }
 
     // Parse network configuration if provided
