@@ -276,7 +276,8 @@ void setup() {
 
     // Initialize display
     ESP_LOGI(TAG, "▶ Initializing ST7789 Display...");
-    if (!ST7789Display::init()) {
+    bool display_initialized = ST7789Display::init();
+    if (!display_initialized) {
         ESP_LOGW(TAG, "⚠ WARNING: Display initialization failed, continuing with serial output only");
     } else {
         ESP_LOGI(TAG, "✓ Display initialized");
@@ -502,7 +503,7 @@ void setup() {
     hw_config.imu_detected = (imu_driver != nullptr);  // IMU presence (accel/gyro)
     hw_config.compass_detected = (compass_wrapper != nullptr);  // AK09916 magnetometer
     hw_config.battery_detected = (battery_driver != nullptr) && sensor_manager.battery_valid();
-    hw_config.display_detected = ST7789Display::init();  // Display already initialized
+    hw_config.display_detected = display_initialized;  // Use result from earlier initialization
     hw_config.rtc_detected = (rtc_manager != nullptr);  // RTC on Adalogger FeatherWing
     hw_config.obd_connected = false;  // Will be updated by StatusMonitor when OBD connects
     hw_config.obd_device_name[0] = '\0';
