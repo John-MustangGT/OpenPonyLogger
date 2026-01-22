@@ -1,5 +1,12 @@
 #include "status_monitor.h"
-#include "flash_storage.h"
+
+// Include the appropriate storage backend
+#if defined(USE_SD_CARD)
+    #include "sd_storage.h"
+#elif defined(USE_FLASH_STORAGE)
+    #include "flash_storage.h"
+#endif
+
 #include "units_helper.h"
 #include "wifi_manager.h"
 #include "config_manager.h"
@@ -29,10 +36,10 @@
 
 static const char* TAG = "STATUS";
 
-StatusMonitor::StatusMonitor(RTLoggerThread* rt_logger, FlashStorage* flash_storage,
+StatusMonitor::StatusMonitor(RTLoggerThread* rt_logger, StorageType* storage,
                              uint32_t report_interval_ms)
     : m_rt_logger(rt_logger),
-      m_flash_storage(flash_storage),
+      m_flash_storage(storage),
       m_report_interval_ms(report_interval_ms),
       m_task_handle(nullptr),
       m_running(false),

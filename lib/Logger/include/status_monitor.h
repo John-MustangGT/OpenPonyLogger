@@ -9,7 +9,16 @@
 #include <freertos/task.h>
 
 // Forward declaration to avoid circular dependency
-class FlashStorage;
+// Storage type is selected at build time
+#if defined(USE_SD_CARD)
+    class SDStorage;
+    typedef SDStorage StorageType;
+#elif defined(USE_FLASH_STORAGE)
+    class FlashStorage;
+    typedef FlashStorage StorageType;
+#else
+    #error "No storage backend defined!"
+#endif
 
 /**
  * @brief Status Monitor Thread - Core 0
@@ -20,10 +29,10 @@ public:
     /**
      * @brief Constructor
      * @param rt_logger RTLoggerThread instance for accessing last sensor values
-     * @param flash_storage FlashStorage instance for direct OBD sample queuing
+     * @param storage Storage instance for direct OBD sample queuing
      * @param report_interval_ms How often to print status (default 10 seconds)
      */
-    StatusMonitor(RTLoggerThread* rt_logger, FlashStorage* flash_storage = nullptr,
+    StatusMonitor(RTLoggerThread* rt_logger, StorageType* storage = nullptr,
                   uint32_t report_interval_ms = 10000);
     
     ~StatusMonitor();
@@ -61,7 +70,7 @@ public:
 
 private:
     RTLoggerThread* m_rt_logger;
-    FlashStorage* m_flash_storage;
+    StorageType* m_flash_storage;  // Pointer to storage backend (Flash or SD)
     uint32_t m_report_interval_ms;
     TaskHandle_t m_task_handle;
     bool m_running;

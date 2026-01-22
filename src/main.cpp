@@ -12,7 +12,20 @@
 #include "rtc_manager.h"
 #include "time_update_task.h"
 #include "rt_logger_thread.h"
-#include "flash_storage.h"
+
+// Storage backend selection (build-time)
+#if defined(USE_SD_CARD)
+    #include "sd_storage.h"
+    #define StorageBackend SDStorage
+    #define STORAGE_TYPE "SD Card"
+#elif defined(USE_FLASH_STORAGE)
+    #include "flash_storage.h"
+    #define StorageBackend FlashStorage
+    #define STORAGE_TYPE "Flash"
+#else
+    #error "No storage backend defined! Define USE_FLASH_STORAGE or USE_SD_CARD"
+#endif
+
 #include "log_file_manager_flash.h"
 #include "storage_reporter.h"
 #include "status_monitor.h"
@@ -51,9 +64,9 @@ SensorManager sensor_manager;
 RTLoggerThread* rt_logger = nullptr;
 StatusMonitor* status_monitor = nullptr;
 StorageReporter reporter;
-FlashStorage* flash_storage = nullptr;  // Flash partition writer (Core 0, reads from PSRAM queue)
-RTCManager* rtc_manager = nullptr;      // Real-time clock manager
-TimeUpdateTask* time_updater = nullptr; // Low-priority GPS time sync task
+StorageBackend* flash_storage = nullptr;  // Storage writer (Core 0, reads from PSRAM queue)
+RTCManager* rtc_manager = nullptr;        // Real-time clock manager
+TimeUpdateTask* time_updater = nullptr;   // Low-priority GPS time sync task
 
 // PA1010D GPS driver instance
 PA1010DDriver* gps_driver = nullptr;
@@ -381,19 +394,20 @@ void setup() {
         Serial.flush();
     }
     
-    // Initialize flash storage (Core 0 writer task with large PSRAM queue)
-    Serial.println("\n▶ Initializing Flash Storage...");
+    // Initialize storage backend (Core 0 writer task with large PSRAM queue)
+    Serial.printf("\n▶ Initializing %s Storage...\n", STORAGE_TYPE);
     Serial.flush();
-    flash_storage = new FlashStorage();
+    flash_storage = new StorageBackend();
     if (!flash_storage->begin(rtc_manager)) {
-        Serial.println("✗ ERROR: Failed to initialize flash storage");
+        Serial.printf("✗ ERROR: Failed to initialize %s storage\n", STORAGE_TYPE);
         Serial.println("System halted.");
         while (1) { delay(1000); }
     }
-    Serial.println("✓ Flash storage initialized");
+    Serial.printf("✓ %s storage initialized\n", STORAGE_TYPE);
     Serial.flush();
 
-    // Initialize LogFileManager for downloads
+    // Initialize LogFileManager for downloads (Flash builds only)
+#if defined(USE_FLASH_STORAGE)
     Serial.println("▶ Initializing LogFileManager for downloads...");
     Serial.flush();
     if (LogFileManager::init()) {
@@ -403,6 +417,10 @@ void setup() {
         Serial.println("✗ WARNING: LogFileManager initialization failed, downloads will not work");
     }
     Serial.flush();
+#elif defined(USE_SD_CARD)
+    Serial.println("▶ SD Card build - log files accessible directly on SD");
+    Serial.flush();
+#endif
 
     // Initialize WiFi AP mode with WebSocket server
     Serial.println("▶ Initializing WiFi AP mode...");
@@ -421,7 +439,7 @@ void setup() {
     // Create and start status monitor on core 0
     Serial.println("  → Creating StatusMonitor object...");
     Serial.flush();
-    status_monitor = new StatusMonitor(rt_logger, flash_storage, 5000);  // Pass FlashStorage for direct OBD queuing
+    status_monitor = new StatusMonitor(rt_logger, flash_storage, 5000);  // Pass storage for direct OBD queuing
     Serial.println("  ✓ StatusMonitor object created");
     Serial.flush();
     
