@@ -112,12 +112,22 @@ public:
      * @param ble_name BLE device name
      */
     static void show_info_screen(const char* ip_address, const char* ble_name);
-    
+
     /**
      * @brief Display shutdown countdown screen
      * @param seconds_remaining Seconds until shutdown
      */
     static void show_shutdown_screen(uint32_t seconds_remaining);
+
+    /**
+     * @brief Display boot splash screen with version information
+     * @param version_string Version string to display
+     * @param commit_sha Git commit SHA
+     * @param branch Git branch name
+     * @param build_time Build timestamp
+     */
+    static void show_splash_screen(const char* version_string, const char* commit_sha,
+                                   const char* branch, const char* build_time);
 
 private:
     static Adafruit_ST7789* m_tft;

@@ -325,17 +325,29 @@ void WiFiManager::handle_config_post(AsyncWebServerRequest* request, uint8_t* da
 
 void WiFiManager::handle_about(AsyncWebServerRequest* request) {
     JsonDocument doc;
-    
+
     #ifdef GIT_COMMIT_SHA
         doc["git_sha"] = GIT_COMMIT_SHA;
     #else
         doc["git_sha"] = "unknown";
     #endif
-    
-    #ifdef PROJECT_VERSION
-        doc["version"] = PROJECT_VERSION;
+
+    #ifdef GIT_BRANCH
+        doc["git_branch"] = GIT_BRANCH;
     #else
-        doc["version"] = "1.0.0";
+        doc["git_branch"] = "unknown";
+    #endif
+
+    #ifdef GIT_TAG
+        doc["version"] = GIT_TAG;
+    #else
+        doc["version"] = "v0.0.0";
+    #endif
+
+    #ifdef BUILD_TIMESTAMP
+        doc["build_time"] = BUILD_TIMESTAMP;
+    #else
+        doc["build_time"] = "unknown";
     #endif
     
     // Memory information with safety checks

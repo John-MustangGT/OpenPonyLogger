@@ -363,6 +363,83 @@ void ST7789Display::show_shutdown_screen(uint32_t seconds_remaining) {
     m_tft->println("Connect USB to cancel");
 }
 
+void ST7789Display::show_splash_screen(const char* version_string, const char* commit_sha,
+                                      const char* branch, const char* build_time) {
+    if (!m_initialized || m_tft == nullptr) return;
+
+    // Clear screen with dark background
+    m_tft->fillScreen(ST77XX_BLACK);
+
+    // Title - Project Name
+    m_tft->setTextColor(ST77XX_CYAN);
+    m_tft->setTextSize(2);
+    m_tft->setCursor(10, 8);
+    m_tft->println("OpenPony");
+    m_tft->setCursor(10, 28);
+    m_tft->println("Logger");
+
+    // Version/Tag
+    m_tft->setTextColor(ST77XX_GREEN);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(5, 55);
+    m_tft->print("Version: ");
+    m_tft->setTextColor(ST77XX_YELLOW);
+    if (version_string != nullptr) {
+        // Extract just the tag (e.g., "v0.0.0" from full string)
+        const char* tag_start = strstr(version_string, "v");
+        if (tag_start) {
+            char tag[16];
+            sscanf(tag_start, "%15s", tag);
+            m_tft->println(tag);
+        } else {
+            m_tft->println(version_string);
+        }
+    }
+
+    // Commit SHA
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setCursor(5, 70);
+    m_tft->print("Commit: ");
+    m_tft->setTextColor(ST77XX_YELLOW);
+    if (commit_sha != nullptr) {
+        // Show first 7 characters of SHA
+        char short_sha[9];
+        snprintf(short_sha, sizeof(short_sha), "%.7s", commit_sha);
+        m_tft->println(short_sha);
+    }
+
+    // Branch
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setCursor(5, 85);
+    m_tft->print("Branch: ");
+    m_tft->setTextColor(ST77XX_CYAN);
+    if (branch != nullptr) {
+        // Truncate long branch names
+        char short_branch[25];
+        snprintf(short_branch, sizeof(short_branch), "%.24s", branch);
+        m_tft->println(short_branch);
+    }
+
+    // Build timestamp
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(5, 105);
+    m_tft->print("Built: ");
+    m_tft->setTextColor(ST77XX_GREEN);
+    if (build_time != nullptr) {
+        // Show truncated timestamp
+        char short_time[21];
+        snprintf(short_time, sizeof(short_time), "%.20s", build_time);
+        m_tft->println(short_time);
+    }
+
+    // Footer - License
+    m_tft->setTextColor(ST77XX_MAGENTA);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(5, 125);
+    m_tft->println("MIT License - Open Source");
+}
+
 // ============================================================================
 // NeoPixel Status Indicator Implementation
 // ============================================================================

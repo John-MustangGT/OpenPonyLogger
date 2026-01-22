@@ -591,12 +591,20 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
             <div class="info-section">
                 <h3>Version Information</h3>
                 <div class="info-row">
-                    <span class="info-label">Git Commit SHA:</span>
-                    <span class="info-value" id="git-sha">Loading...</span>
-                </div>
-                <div class="info-row">
                     <span class="info-label">Project Version:</span>
                     <span class="info-value" id="project-version">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Git Commit SHA:</span>
+                    <span class="info-value" id="git-sha" style="font-family: monospace;">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Git Branch:</span>
+                    <span class="info-value" id="git-branch" style="font-family: monospace;">Loading...</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Build Timestamp:</span>
+                    <span class="info-value" id="build-time">Loading...</span>
                 </div>
             </div>
             
@@ -985,8 +993,10 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
             try {
                 const response = await fetch('/api/about');
                 const info = await response.json();
-                document.getElementById('git-sha').textContent = info.git_sha;
-                document.getElementById('project-version').textContent = info.version;
+                document.getElementById('project-version').textContent = info.version || 'v0.0.0';
+                document.getElementById('git-sha').textContent = info.git_sha || 'unknown';
+                document.getElementById('git-branch').textContent = info.git_branch || 'unknown';
+                document.getElementById('build-time').textContent = info.build_time || 'unknown';
                 document.getElementById('device-gps').textContent = info.devices.gps ? 'Connected' : 'Not Found';
                 document.getElementById('device-imu').textContent = info.devices.imu ? 'Connected' : 'Not Found';
                 document.getElementById('device-battery').textContent = info.devices.battery ? 'Connected' : 'Not Found';

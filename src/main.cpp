@@ -32,6 +32,7 @@
 #include "st7789_display.h"
 #include "wifi_manager.h"
 #include "config_manager.h"
+#include "version_info.h"
 
 // Hardware configuration
 #define GPS_TX_PIN          17
@@ -258,6 +259,15 @@ void setup() {
     ESP_LOGI(TAG, "║              ESP32-S3 Feather TFT                          ║");
     ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════════════╝");
 
+    // Print version information
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "Version: %s", GIT_TAG);
+    ESP_LOGI(TAG, "Commit:  %s", GIT_COMMIT_SHA);
+    ESP_LOGI(TAG, "Branch:  %s", GIT_BRANCH);
+    ESP_LOGI(TAG, "Built:   %s", BUILD_TIMESTAMP);
+    ESP_LOGI(TAG, "Storage: %s", STORAGE_TYPE);
+    ESP_LOGI(TAG, "");
+
     // Initialize VBUS detection pin
     pinMode(VBUS_DETECT_PIN, INPUT);
     ESP_LOGI(TAG, "✓ USB power detection enabled (GPIO19)");
@@ -270,6 +280,11 @@ void setup() {
         ESP_LOGW(TAG, "⚠ WARNING: Display initialization failed, continuing with serial output only");
     } else {
         ESP_LOGI(TAG, "✓ Display initialized");
+
+        // Show splash screen with version info
+        ST7789Display::show_splash_screen(get_version_string(), GIT_COMMIT_SHA,
+                                         GIT_BRANCH, BUILD_TIMESTAMP);
+        delay(3000);  // Show splash for 3 seconds
     }
     
     // Initialize NeoPixel status indicator
