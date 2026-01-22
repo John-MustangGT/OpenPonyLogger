@@ -471,7 +471,47 @@ void setup() {
     
     Serial.println("✓ Status monitor started");
     Serial.flush();
-    
+
+    // Save build information and hardware configuration to NVS
+    ESP_LOGI(TAG, "▶ Saving build info and hardware config to NVS...");
+
+    // Load existing build info to check if this is first boot
+    build_info_t stored_build_info = ConfigManager::load_build_info();
+
+    // Prepare current build info
+    build_info_t current_build_info;
+    snprintf(current_build_info.version, sizeof(current_build_info.version), "%s", GIT_TAG);
+    snprintf(current_build_info.commit_sha, sizeof(current_build_info.commit_sha), "%.8s", GIT_COMMIT_SHA);
+    snprintf(current_build_info.branch, sizeof(current_build_info.branch), "%s", GIT_BRANCH);
+    snprintf(current_build_info.build_time, sizeof(current_build_info.build_time), "%s", BUILD_TIMESTAMP);
+    snprintf(current_build_info.storage_type, sizeof(current_build_info.storage_type), "%s", STORAGE_TYPE);
+
+    // Set first boot time if not already set
+    if (stored_build_info.first_boot_time == 0) {
+        current_build_info.first_boot_time = millis() / 1000;  // Use millis as placeholder (real time set by RTC later)
+        ESP_LOGI(TAG, "First boot detected - saving initial build info");
+    } else {
+        current_build_info.first_boot_time = stored_build_info.first_boot_time;
+    }
+
+    ConfigManager::save_build_info(current_build_info);
+
+    // Prepare hardware configuration
+    hardware_config_t hw_config;
+    hw_config.gps_detected = (gps_driver != nullptr) && sensor_manager.gps_valid();
+    hw_config.imu_detected = (imu_driver != nullptr);  // IMU presence (accel/gyro)
+    hw_config.compass_detected = (compass_wrapper != nullptr);  // AK09916 magnetometer
+    hw_config.battery_detected = (battery_driver != nullptr) && sensor_manager.battery_valid();
+    hw_config.display_detected = ST7789Display::init();  // Display already initialized
+    hw_config.rtc_detected = (rtc_manager != nullptr);  // RTC on Adalogger FeatherWing
+    hw_config.obd_connected = false;  // Will be updated by StatusMonitor when OBD connects
+    hw_config.obd_device_name[0] = '\0';
+    hw_config.last_boot_time = millis() / 1000;  // Use millis as placeholder
+
+    ConfigManager::save_hardware_config(hw_config);
+
+    ESP_LOGI(TAG, "✓ Build info and hardware config saved to NVS");
+
     ESP_LOGI(TAG, "╔═══════════════════════════════════════════════════════════╗");
     ESP_LOGI(TAG, "║              ✓ SYSTEM READY - LOGGING ACTIVE              ║");
     ESP_LOGI(TAG, "╚═══════════════════════════════════════════════════════════╝");

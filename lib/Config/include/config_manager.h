@@ -14,13 +14,57 @@ struct network_config_t {
     char password[64];      // WiFi AP password (empty = open network)
     uint8_t ip[4];          // IP address (e.g., 192.168.4.1)
     uint8_t subnet[4];      // Subnet mask (e.g., 255.255.255.0)
-    
+
     // Default constructor with sensible defaults
     network_config_t() {
         strncpy(ssid, "PonyLogger", sizeof(ssid));
         password[0] = '\0';  // Open network by default
         ip[0] = 192; ip[1] = 168; ip[2] = 4; ip[3] = 1;
         subnet[0] = 255; subnet[1] = 255; subnet[2] = 255; subnet[3] = 0;
+    }
+};
+
+/**
+ * @brief Build Information
+ * Captured at build time and stored in NVS on first boot
+ */
+struct build_info_t {
+    char version[16];       // Git tag (e.g., "v1.0.0")
+    char commit_sha[12];    // Git commit SHA (8 chars + null)
+    char branch[48];        // Git branch name (47 chars + null)
+    char build_time[24];    // Build timestamp (23 chars + null)
+    char storage_type[16];  // "Flash" or "SD Card"
+    uint32_t first_boot_time; // Unix timestamp of first boot (0 = not set)
+
+    build_info_t() {
+        version[0] = '\0';
+        commit_sha[0] = '\0';
+        branch[0] = '\0';
+        build_time[0] = '\0';
+        storage_type[0] = '\0';
+        first_boot_time = 0;
+    }
+};
+
+/**
+ * @brief Hardware Configuration
+ * Detected hardware at last successful boot
+ */
+struct hardware_config_t {
+    bool gps_detected;         // PA1010D GPS module
+    bool imu_detected;         // ICM-20948 IMU (accel/gyro)
+    bool compass_detected;     // AK09916 magnetometer (part of ICM-20948)
+    bool battery_detected;     // MAX17048 battery monitor
+    bool display_detected;     // ST7789 TFT display
+    bool rtc_detected;         // PCF8523 RTC (on Adalogger)
+    bool obd_connected;        // OBD-II device connected (at last boot)
+    char obd_device_name[32];  // Last connected OBD device name
+    uint32_t last_boot_time;   // Unix timestamp of last successful boot
+
+    hardware_config_t() : gps_detected(false), imu_detected(false), compass_detected(false),
+                         battery_detected(false), display_detected(false), rtc_detected(false),
+                         obd_connected(false), last_boot_time(0) {
+        obd_device_name[0] = '\0';
     }
 };
 
@@ -80,7 +124,13 @@ struct logging_config_t {
 
     // Network configuration
     network_config_t network;
-    
+
+    // Build information (captured at build time)
+    build_info_t build_info;
+
+    // Hardware configuration (detected at boot)
+    hardware_config_t hardware_config;
+
     // Individual PID configurations
     std::map<uint8_t, pid_config_t> pid_configs;
     
@@ -214,6 +264,32 @@ public:
      */
     static bool verify_vin(const char* vin);
 
+    /**
+     * @brief Save build information to NVS (called on first boot)
+     * @param build_info Build information from version_info.h
+     * @return true if successful
+     */
+    static bool save_build_info(const build_info_t& build_info);
+
+    /**
+     * @brief Load build information from NVS
+     * @return Build information (empty if not set)
+     */
+    static build_info_t load_build_info();
+
+    /**
+     * @brief Save hardware configuration to NVS (called after init)
+     * @param hw_config Detected hardware configuration
+     * @return true if successful
+     */
+    static bool save_hardware_config(const hardware_config_t& hw_config);
+
+    /**
+     * @brief Load hardware configuration from NVS
+     * @return Hardware configuration (all false if not set)
+     */
+    static hardware_config_t load_hardware_config();
+
 private:
     static bool m_initialized;
     static logging_config_t m_current_config;
@@ -239,6 +315,23 @@ private:
     static const char* KEY_NET_IP;
     static const char* KEY_NET_SUBNET;
     static const char* KEY_CHECKSUM;
+    // Build info keys
+    static const char* KEY_BUILD_VERSION;
+    static const char* KEY_BUILD_COMMIT;
+    static const char* KEY_BUILD_BRANCH;
+    static const char* KEY_BUILD_TIME;
+    static const char* KEY_BUILD_STORAGE;
+    static const char* KEY_FIRST_BOOT;
+    // Hardware config keys
+    static const char* KEY_HW_GPS;
+    static const char* KEY_HW_IMU;
+    static const char* KEY_HW_COMPASS;
+    static const char* KEY_HW_BATTERY;
+    static const char* KEY_HW_DISPLAY;
+    static const char* KEY_HW_RTC;
+    static const char* KEY_HW_OBD;
+    static const char* KEY_HW_OBD_NAME;
+    static const char* KEY_LAST_BOOT;
     
     /**
      * @brief Calculate CRC32 checksum of configuration

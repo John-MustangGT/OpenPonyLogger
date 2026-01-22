@@ -30,6 +30,23 @@ const char* ConfigManager::KEY_NET_PASSWORD = "net_password";
 const char* ConfigManager::KEY_NET_IP = "net_ip";
 const char* ConfigManager::KEY_NET_SUBNET = "net_subnet";
 const char* ConfigManager::KEY_CHECKSUM = "checksum";
+// Build info keys
+const char* ConfigManager::KEY_BUILD_VERSION = "build_ver";
+const char* ConfigManager::KEY_BUILD_COMMIT = "build_sha";
+const char* ConfigManager::KEY_BUILD_BRANCH = "build_branch";
+const char* ConfigManager::KEY_BUILD_TIME = "build_time";
+const char* ConfigManager::KEY_BUILD_STORAGE = "build_storage";
+const char* ConfigManager::KEY_FIRST_BOOT = "first_boot";
+// Hardware config keys
+const char* ConfigManager::KEY_HW_GPS = "hw_gps";
+const char* ConfigManager::KEY_HW_IMU = "hw_imu";
+const char* ConfigManager::KEY_HW_COMPASS = "hw_compass";
+const char* ConfigManager::KEY_HW_BATTERY = "hw_battery";
+const char* ConfigManager::KEY_HW_DISPLAY = "hw_display";
+const char* ConfigManager::KEY_HW_RTC = "hw_rtc";
+const char* ConfigManager::KEY_HW_OBD = "hw_obd";
+const char* ConfigManager::KEY_HW_OBD_NAME = "hw_obd_name";
+const char* ConfigManager::KEY_LAST_BOOT = "last_boot";
 
 bool ConfigManager::init() {
     if (m_initialized) {
@@ -447,4 +464,100 @@ bool ConfigManager::verify_vin(const char* vin) {
     }
 
     return matches;
+}
+
+bool ConfigManager::save_build_info(const build_info_t& build_info) {
+    Preferences prefs;
+
+    if (!prefs.begin(NVS_NAMESPACE, false)) {  // false = read-write
+        ESP_LOGE(TAG, "Failed to open NVS for build info save");
+        return false;
+    }
+
+    prefs.putString(KEY_BUILD_VERSION, build_info.version);
+    prefs.putString(KEY_BUILD_COMMIT, build_info.commit_sha);
+    prefs.putString(KEY_BUILD_BRANCH, build_info.branch);
+    prefs.putString(KEY_BUILD_TIME, build_info.build_time);
+    prefs.putString(KEY_BUILD_STORAGE, build_info.storage_type);
+    prefs.putUInt(KEY_FIRST_BOOT, build_info.first_boot_time);
+
+    prefs.end();
+
+    ESP_LOGI(TAG, "✓ Build info saved: %s (%s on %s)",
+             build_info.version, build_info.commit_sha, build_info.branch);
+
+    return true;
+}
+
+build_info_t ConfigManager::load_build_info() {
+    Preferences prefs;
+    build_info_t build_info;
+
+    if (!prefs.begin(NVS_NAMESPACE, true)) {  // true = read-only
+        ESP_LOGI(TAG, "No saved build info found");
+        return build_info;  // Return empty
+    }
+
+    prefs.getString(KEY_BUILD_VERSION, build_info.version, sizeof(build_info.version));
+    prefs.getString(KEY_BUILD_COMMIT, build_info.commit_sha, sizeof(build_info.commit_sha));
+    prefs.getString(KEY_BUILD_BRANCH, build_info.branch, sizeof(build_info.branch));
+    prefs.getString(KEY_BUILD_TIME, build_info.build_time, sizeof(build_info.build_time));
+    prefs.getString(KEY_BUILD_STORAGE, build_info.storage_type, sizeof(build_info.storage_type));
+    build_info.first_boot_time = prefs.getUInt(KEY_FIRST_BOOT, 0);
+
+    prefs.end();
+
+    return build_info;
+}
+
+bool ConfigManager::save_hardware_config(const hardware_config_t& hw_config) {
+    Preferences prefs;
+
+    if (!prefs.begin(NVS_NAMESPACE, false)) {  // false = read-write
+        ESP_LOGE(TAG, "Failed to open NVS for hardware config save");
+        return false;
+    }
+
+    prefs.putBool(KEY_HW_GPS, hw_config.gps_detected);
+    prefs.putBool(KEY_HW_IMU, hw_config.imu_detected);
+    prefs.putBool(KEY_HW_COMPASS, hw_config.compass_detected);
+    prefs.putBool(KEY_HW_BATTERY, hw_config.battery_detected);
+    prefs.putBool(KEY_HW_DISPLAY, hw_config.display_detected);
+    prefs.putBool(KEY_HW_RTC, hw_config.rtc_detected);
+    prefs.putBool(KEY_HW_OBD, hw_config.obd_connected);
+    prefs.putString(KEY_HW_OBD_NAME, hw_config.obd_device_name);
+    prefs.putUInt(KEY_LAST_BOOT, hw_config.last_boot_time);
+
+    prefs.end();
+
+    ESP_LOGI(TAG, "✓ Hardware config saved - GPS:%d IMU:%d Compass:%d Battery:%d Display:%d RTC:%d OBD:%d",
+             hw_config.gps_detected, hw_config.imu_detected, hw_config.compass_detected,
+             hw_config.battery_detected, hw_config.display_detected, hw_config.rtc_detected,
+             hw_config.obd_connected);
+
+    return true;
+}
+
+hardware_config_t ConfigManager::load_hardware_config() {
+    Preferences prefs;
+    hardware_config_t hw_config;
+
+    if (!prefs.begin(NVS_NAMESPACE, true)) {  // true = read-only
+        ESP_LOGI(TAG, "No saved hardware config found");
+        return hw_config;  // Return empty (all false)
+    }
+
+    hw_config.gps_detected = prefs.getBool(KEY_HW_GPS, false);
+    hw_config.imu_detected = prefs.getBool(KEY_HW_IMU, false);
+    hw_config.compass_detected = prefs.getBool(KEY_HW_COMPASS, false);
+    hw_config.battery_detected = prefs.getBool(KEY_HW_BATTERY, false);
+    hw_config.display_detected = prefs.getBool(KEY_HW_DISPLAY, false);
+    hw_config.rtc_detected = prefs.getBool(KEY_HW_RTC, false);
+    hw_config.obd_connected = prefs.getBool(KEY_HW_OBD, false);
+    prefs.getString(KEY_HW_OBD_NAME, hw_config.obd_device_name, sizeof(hw_config.obd_device_name));
+    hw_config.last_boot_time = prefs.getUInt(KEY_LAST_BOOT, 0);
+
+    prefs.end();
+
+    return hw_config;
 }

@@ -349,7 +349,18 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
     #else
         doc["build_time"] = "unknown";
     #endif
-    
+
+    // Stored build information (from NVS - first boot)
+    build_info_t stored_build = ConfigManager::load_build_info();
+    if (stored_build.first_boot_time > 0) {
+        doc["first_boot"]["version"] = String(stored_build.version);
+        doc["first_boot"]["commit"] = String(stored_build.commit_sha);
+        doc["first_boot"]["branch"] = String(stored_build.branch);
+        doc["first_boot"]["build_time"] = String(stored_build.build_time);
+        doc["first_boot"]["storage_type"] = String(stored_build.storage_type);
+        doc["first_boot"]["timestamp"] = stored_build.first_boot_time;
+    }
+
     // Memory information with safety checks
     JsonObject memory = doc["memory"].to<JsonObject>();
     
@@ -371,10 +382,14 @@ void WiFiManager::handle_about(AsyncWebServerRequest* request) {
     memory["sketch_size"] = ESP.getSketchSize();
     memory["sketch_free"] = ESP.getFreeSketchSpace();
     
-    // Device status (placeholder - could check actual hardware)
-    doc["devices"]["gps"] = true;
-    doc["devices"]["imu"] = true;
-    doc["devices"]["battery"] = true;
+    // Device status from stored hardware config
+    hardware_config_t hw_config = ConfigManager::load_hardware_config();
+    doc["devices"]["gps"] = hw_config.gps_detected;
+    doc["devices"]["imu"] = hw_config.imu_detected;
+    doc["devices"]["compass"] = hw_config.compass_detected;
+    doc["devices"]["battery"] = hw_config.battery_detected;
+    doc["devices"]["display"] = hw_config.display_detected;
+    doc["devices"]["rtc"] = hw_config.rtc_detected;
     
     // OBD/ELM-327 status
     bool obd_connected = false;
