@@ -556,10 +556,10 @@ void StatusMonitor::task_loop() {
         // NOTE: WebSocket broadcasts removed from StatusMonitor to reduce Core 0 load.
         // RTLoggerThread on Core 1 handles all WebSocket broadcasts at 5Hz (200ms interval).
         // This eliminates duplicate broadcasts and moves JSON serialization off Core 0.
-        
-        // Update display every 4 seconds (reduced from 2s to minimize Core 0 load)
+
+        // Update display and serial monitor at 1Hz
         static uint32_t last_display_update = 0;
-        if (m_rt_logger != nullptr && now - last_display_update >= 4000) {
+        if (m_rt_logger != nullptr && now - last_display_update >= 1000) {
             DisplayMode current_mode = ST7789Display::get_display_mode();
             bool is_paused = m_rt_logger->is_storage_paused();
             
@@ -598,6 +598,10 @@ void StatusMonitor::task_loop() {
                 ST7789Display::show_info_screen("192.168.4.1", "OpenPonyLogger");
             }
             // DisplayMode::DARK - do nothing
+
+            // Print 1Hz serial monitor update showing total samples, RTLogger Hz, and write count
+            ESP_LOGI(TAG, "[Monitor] Samples: %u | RTLogger: %.1f Hz | Writes: %u",
+                     sample_count, sample_hz, m_write_count);
 
             last_display_update = now;
 
