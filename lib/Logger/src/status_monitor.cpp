@@ -340,13 +340,13 @@ void StatusMonitor::task_loop() {
             // === Data Auto-Start/Stop (Engine-based) ===
             if (config.data_auto_enabled && obd.valid) {
                 // Engine running if RPM > 0 or speed > 0
-                bool engine_running = (obd.rpm > 0 || obd.speed > 0);
+                bool engine_running = (obd.engine_rpm > 0 || obd.vehicle_speed > 0);
 
                 if (engine_running && !data_was_running) {
                     // Engine started - auto-resume if paused
                     if (m_rt_logger->is_storage_paused()) {
                         m_rt_logger->resume_storage();
-                        ESP_LOGI(TAG, "[Auto] Data auto-started (engine running: RPM=%d)", obd.rpm);
+                        ESP_LOGI(TAG, "[Auto] Data auto-started (engine running: RPM=%.0f)", obd.engine_rpm);
                     }
                     data_stopped_since = 0;
                     data_was_running = true;
@@ -488,8 +488,8 @@ void StatusMonitor::task_loop() {
                         ESP_LOGI(TAG, "[Power] Restarting BLE scanning...");
                         IcarBleDriver::start_scan();
 
-                        // Update NeoPixel state
-                        NeoPixelStatus::setState(NeoPixelStatus::State::RUNNING);
+                        // Update NeoPixel state (resume normal operation)
+                        NeoPixelStatus::setState(NeoPixelStatus::State::NO_GPS_FIX);
 
                     } else if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
                         // Timer expired - USB not restored in 5 minutes

@@ -9,6 +9,14 @@
 
 static const char* TAG = "SDStorage";
 
+// Simple log block structure for SD storage (simplified version without compression)
+struct __attribute__((packed)) log_block_t {
+    uint32_t magic;          // LOG_BLOCK_MAGIC
+    int64_t  timestamp_us;   // Timestamp in microseconds
+    uint32_t data_size;      // Size of data following this header
+    uint32_t block_crc;      // CRC32 of the data
+};
+
 // SD card pin configuration (from build flags)
 #ifndef SD_CS_PIN
 #define SD_CS_PIN 10
@@ -288,8 +296,8 @@ void SDStorage::write_session_header() {
     if (!m_current_file) return;
 
     // Update CRC
-    m_session_header.header_crc = esp_crc32_le(0, (const uint8_t*)&m_session_header,
-                                                sizeof(session_start_header_t) - sizeof(uint32_t));
+    m_session_header.crc32 = esp_crc32_le(0, (const uint8_t*)&m_session_header,
+                                          sizeof(session_start_header_t) - sizeof(uint32_t));
 
     // Write header
     size_t written = m_current_file.write((const uint8_t*)&m_session_header,
@@ -322,40 +330,34 @@ void SDStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel,
         samples[count].data.gps.longitude = gps.longitude;
         samples[count].data.gps.altitude = gps.altitude;
         samples[count].data.gps.speed = gps.speed;
-        samples[count].data.gps.heading = gps.heading;
-        samples[count].data.gps.hdop = gps.hdop;
+        samples[count].data.gps.heading = 0;  // Note: GPS doesn't provide heading
+        samples[count].data.gps.hdop = 0;     // Note: GPS doesn't provide HDOP
         count++;
     }
 
-    // Accelerometer
-    if (accel.valid) {
-        samples[count].type = 0x02;
-        samples[count].timestamp_us = timestamp;
-        samples[count].data.xyz.x = accel.x;
-        samples[count].data.xyz.y = accel.y;
-        samples[count].data.xyz.z = accel.z;
-        count++;
-    }
+    // Accelerometer (always log if available)
+    samples[count].type = 0x02;
+    samples[count].timestamp_us = timestamp;
+    samples[count].data.xyz.x = accel.x;
+    samples[count].data.xyz.y = accel.y;
+    samples[count].data.xyz.z = accel.z;
+    count++;
 
-    // Gyroscope
-    if (gyro.valid) {
-        samples[count].type = 0x03;
-        samples[count].timestamp_us = timestamp;
-        samples[count].data.xyz.x = gyro.x;
-        samples[count].data.xyz.y = gyro.y;
-        samples[count].data.xyz.z = gyro.z;
-        count++;
-    }
+    // Gyroscope (always log if available)
+    samples[count].type = 0x03;
+    samples[count].timestamp_us = timestamp;
+    samples[count].data.xyz.x = gyro.x;
+    samples[count].data.xyz.y = gyro.y;
+    samples[count].data.xyz.z = gyro.z;
+    count++;
 
-    // Compass
-    if (compass.valid) {
-        samples[count].type = 0x04;
-        samples[count].timestamp_us = timestamp;
-        samples[count].data.xyz.x = compass.x;
-        samples[count].data.xyz.y = compass.y;
-        samples[count].data.xyz.z = compass.z;
-        count++;
-    }
+    // Compass (always log if available)
+    samples[count].type = 0x04;
+    samples[count].timestamp_us = timestamp;
+    samples[count].data.xyz.x = compass.x;
+    samples[count].data.xyz.y = compass.y;
+    samples[count].data.xyz.z = compass.z;
+    count++;
 
     // Battery
     if (battery.valid) {
@@ -363,7 +365,7 @@ void SDStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel,
         samples[count].timestamp_us = timestamp;
         samples[count].data.battery.voltage = battery.voltage;
         samples[count].data.battery.current = battery.current;
-        samples[count].data.battery.soc = battery.soc;
+        samples[count].data.battery.soc = battery.state_of_charge;
         count++;
     }
 
@@ -371,11 +373,11 @@ void SDStorage::write_sample(const gps_data_t& gps, const accel_data_t& accel,
     if (obd.valid && obd.timestamp_us == 0) {
         samples[count].type = 0x06;
         samples[count].timestamp_us = timestamp;
-        samples[count].data.obd.rpm = obd.rpm;
-        samples[count].data.obd.speed = obd.speed;
-        samples[count].data.obd.throttle = obd.throttle;
+        samples[count].data.obd.rpm = obd.engine_rpm;
+        samples[count].data.obd.speed = obd.vehicle_speed;
+        samples[count].data.obd.throttle = obd.throttle_position;
         samples[count].data.obd.coolant_temp = obd.coolant_temp;
-        samples[count].data.obd.maf = obd.maf;
+        samples[count].data.obd.maf = obd.maf_flow;
         samples[count].data.obd.intake_temp = obd.intake_temp;
         count++;
     }
@@ -396,11 +398,11 @@ void SDStorage::queue_obd_sample(const obd_data_t& obd) {
     SampleData sample;
     sample.type = 0x06;
     sample.timestamp_us = obd.timestamp_us;  // Use OBD's embedded timestamp
-    sample.data.obd.rpm = obd.rpm;
-    sample.data.obd.speed = obd.speed;
-    sample.data.obd.throttle = obd.throttle;
+    sample.data.obd.rpm = obd.engine_rpm;
+    sample.data.obd.speed = obd.vehicle_speed;
+    sample.data.obd.throttle = obd.throttle_position;
     sample.data.obd.coolant_temp = obd.coolant_temp;
-    sample.data.obd.maf = obd.maf;
+    sample.data.obd.maf = obd.maf_flow;
     sample.data.obd.intake_temp = obd.intake_temp;
 
     if (xQueueSend(m_sample_queue, &sample, 0) != pdTRUE) {

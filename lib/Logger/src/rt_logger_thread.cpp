@@ -196,13 +196,20 @@ void RTLoggerThread::task_loop() {
                 
                 // GPS data
                 doc["gps_valid"] = m_last_gps.valid;
-                doc["gps_time"] = m_last_gps.utc_time;  // GPS UTC time (Unix timestamp)
                 doc["latitude"] = m_last_gps.latitude;
                 doc["longitude"] = m_last_gps.longitude;
                 doc["altitude"] = m_last_gps.altitude;
                 doc["speed"] = m_last_gps.speed;
-                doc["course"] = m_last_gps.course;  // GPS course/track (0-360 degrees)
                 doc["satellites"] = m_last_gps.satellites;
+
+                // GPS time (formatted from GPS time fields)
+                if (m_last_gps.valid) {
+                    char gps_time_str[32];
+                    snprintf(gps_time_str, sizeof(gps_time_str), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                             m_last_gps.year, m_last_gps.month, m_last_gps.day,
+                             m_last_gps.hour, m_last_gps.minute, m_last_gps.second);
+                    doc["gps_time_str"] = gps_time_str;
+                }
 
                 // Compass (magnetometer) - calculate heading from raw magnetic field
                 // Heading is calculated from X and Y components (assuming level mounting)

@@ -103,10 +103,6 @@ const char HTML_MAIN_PAGE[] PROGMEM = R"rawliteral(
                     <div class="sensor-value" id="speed">--<span class="sensor-unit">mph</span></div>
                 </div>
                 <div class="sensor-card">
-                    <div class="sensor-label">GPS Course</div>
-                    <div class="sensor-value" id="course">--<span class="sensor-unit">°</span></div>
-                </div>
-                <div class="sensor-card">
                     <div class="sensor-label">Heading (Compass)</div>
                     <div class="sensor-value" id="heading">--<span class="sensor-unit">°</span></div>
                 </div>
@@ -775,23 +771,20 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
             document.getElementById('longitude').textContent = data.longitude.toFixed(6);
             document.getElementById('speed').textContent = data.speed.toFixed(1);
 
-            // GPS course/track (0-360 degrees)
-            if (data.course !== undefined) {
-                document.getElementById('course').textContent = data.course.toFixed(1);
-            }
-
             // Compass heading (0-360 degrees)
             if (data.heading !== undefined) {
                 document.getElementById('heading').textContent = data.heading.toFixed(1);
             }
 
-            // GPS UTC time (format as HH:MM:SS)
-            if (data.gps_time && data.gps_time > 0) {
-                const date = new Date(data.gps_time * 1000);
-                const hours = date.getUTCHours().toString().padStart(2, '0');
-                const minutes = date.getUTCMinutes().toString().padStart(2, '0');
-                const seconds = date.getUTCSeconds().toString().padStart(2, '0');
-                document.getElementById('gps-time').textContent = `${hours}:${minutes}:${seconds}`;
+            // GPS UTC time (formatted string from GPS)
+            if (data.gps_time_str) {
+                // Extract HH:MM:SS from ISO format "YYYY-MM-DDTHH:MM:SSZ"
+                const timeMatch = data.gps_time_str.match(/T(\d{2}):(\d{2}):(\d{2})/);
+                if (timeMatch) {
+                    document.getElementById('gps-time').textContent = `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3]}`;
+                } else {
+                    document.getElementById('gps-time').textContent = data.gps_time_str;
+                }
             } else {
                 document.getElementById('gps-time').textContent = '--';
             }
