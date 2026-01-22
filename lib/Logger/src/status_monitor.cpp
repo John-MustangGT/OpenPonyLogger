@@ -670,18 +670,19 @@ void StatusMonitor::task_loop() {
         // Configure wake sources
         ESP_LOGI(TAG, "[Power] Configuring wake sources...");
 
-        // Wake on GPIO19 (VBUS) rising edge - USB power restored
+        // Wake ONLY on GPIO19 (VBUS) rising edge - USB power restored
+        // NOTE: ESP32-S3 can use EITHER ext0 OR ext1, not both!
+        // Using ext0 for single GPIO wake on USB power restore
         esp_sleep_enable_ext0_wakeup((gpio_num_t)VBUS_DETECT_PIN, 1);
 
-        // Wake on GPIO0 (D0 button) falling edge - button press
-        esp_sleep_enable_ext1_wakeup(1ULL << BUTTON_D0, ESP_EXT1_WAKEUP_ANY_LOW);
+        ESP_LOGI(TAG, "[Power] Wake source configured: USB power restore only (GPIO19)");
 
         // Turn off display
         ST7789Display::off();
 
         // Final message
         ESP_LOGI(TAG, "[Power] Entering deep sleep...");
-        ESP_LOGI(TAG, "[Power] Wake sources: USB power (GPIO19) or D0 button (GPIO0)");
+        ESP_LOGI(TAG, "[Power] Will wake when USB power restored (GPIO19)");
 
         delay(100);
 

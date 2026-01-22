@@ -48,8 +48,11 @@ bool SDStorage::begin(RTCManager* rtc_manager) {
         rtc_manager->restore_system_time_on_boot();
     }
 
-    // Initialize SD card with custom SPI pins
-    SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
+    // Initialize SD card
+    // NOTE: SPI.begin() already called by ST7789Display::init() in main.cpp
+    // Both TFT and SD card share the same SPI bus (HSPI: GPIO35/36/37)
+    // Calling SPI.begin() again would be redundant and could cause conflicts
+    // The Adafruit display library auto-initializes SPI with correct pins
 
     if (!SD.begin(SD_CS_PIN)) {
         ESP_LOGE(TAG, "SD card initialization failed!");

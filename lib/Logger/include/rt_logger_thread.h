@@ -132,9 +132,9 @@ private:
     uint32_t m_imu_rate_ms;     // IMU update rate (0 = use main rate)
     uint32_t m_obd_rate_ms;     // OBD update rate (0 = use main rate)
     TaskHandle_t m_task_handle;
-    bool m_running;
-    bool m_storage_paused;      // Pause storage writes
-    bool m_mark_event;          // Mark next frame as event
+    volatile bool m_running;            // Accessed from multiple threads (Core 0 & Core 1)
+    volatile bool m_storage_paused;     // Pause storage writes (cross-thread access)
+    volatile bool m_mark_event;         // Mark next frame as event (cross-thread access)
     
     // Latest sensor data
     gps_data_t m_last_gps;
