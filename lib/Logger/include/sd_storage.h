@@ -150,6 +150,8 @@ private:
     // Task control
     TaskHandle_t m_writer_task;
     QueueHandle_t m_sample_queue;
+    StaticQueue_t* m_queue_buffer;   // PSRAM-allocated queue control structure
+    uint8_t* m_queue_storage;        // PSRAM-allocated queue storage area
     bool m_running;
     bool m_paused;
 

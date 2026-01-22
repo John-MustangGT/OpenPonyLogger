@@ -12,17 +12,18 @@ This document provides a comprehensive mapping of all GPIO pins used in the Open
 | **GPIO0** | Button D0 (Bottom) | Input (Pull-up) | Digital | Pause/Resume Storage (HIGH→LOW when pressed) / Deep sleep wake |
 | **GPIO1** | Button D1 (Middle) | Input | Digital | Cycle Display Mode (LOW→HIGH when pressed) |
 | **GPIO2** | Button D2 (Top) | Input | Digital | Mark Event (LOW→HIGH when pressed) |
-| **GPIO3** | I2C SDA | Bidirectional | I2C | STEMMA QT connector (400kHz) |
-| **GPIO4** | I2C SCL | Output | I2C | STEMMA QT connector (400kHz) |
+| **GPIO3** | I2C SDA | Bidirectional | I2C | STEMMA QT connector (400kHz) - also connects to RTC on Adalogger |
+| **GPIO4** | I2C SCL | Output | I2C | STEMMA QT connector (400kHz) - also connects to RTC on Adalogger |
 | **GPIO7** | I2C/TFT Power Enable | Output | Digital | Shared power for I2C bus and TFT (hold HIGH) |
+| **GPIO10** | SD Card CS | Output | SPI | SD card chip select (SD build only, Adalogger FeatherWing) |
 | **GPIO13** | Red LED | Output | Digital | Status indicator LED (active HIGH) |
 | **GPIO16** | GPS RX | Input | UART | GPS receiver (UART mode) - Serial1 |
 | **GPIO17** | GPS TX | Output | UART | GPS transmitter (UART mode) - Serial1 |
 | **GPIO19** | USB Power Detect (VBUS) | Input | Digital | USB power detection (HIGH = USB powered) / Deep sleep wake |
 | **GPIO33** | NeoPixel | Output | WS2812B | Built-in status LED (GRB + 800kHz) |
-| **GPIO35** | SPI MOSI | Output | SPI (HSPI) | Hardware SPI for TFT display |
-| **GPIO36** | SPI CLK | Output | SPI (HSPI) | Hardware SPI clock for TFT display |
-| **GPIO37** | SPI MISO | Input | SPI (HSPI) | Hardware SPI (currently unused, reserved) |
+| **GPIO35** | SPI MOSI | Output | SPI (HSPI) | Hardware SPI for TFT + SD card (shared) |
+| **GPIO36** | SPI CLK | Output | SPI (HSPI) | Hardware SPI clock for TFT + SD card (shared) |
+| **GPIO37** | SPI MISO | Input | SPI (HSPI) | Hardware SPI - SD card data in (SD build only) |
 | **GPIO40** | TFT DC | Output | SPI | TFT Data/Command select |
 | **GPIO41** | TFT RST | Output | SPI | TFT Hardware Reset |
 | **GPIO42** | TFT CS | Output | SPI | TFT Chip Select |
@@ -132,24 +133,25 @@ This document provides a comprehensive mapping of all GPIO pins used in the Open
 
 ---
 
-### SPI Bus (Hardware HSPI - TFT Display)
+### SPI Bus (Hardware HSPI - TFT Display + SD Card)
 
-The ESP32-S3 uses dedicated hardware SPI pins for the TFT display:
+The ESP32-S3 uses dedicated hardware SPI pins shared between TFT display and SD card (SD build only):
 
 - **GPIO35** - SPI MOSI (Master Out, Slave In)
-  - Function: SPI data output to TFT
-  - Interface: Hardware HSPI (automatically configured by Adafruit_ST7789 library)
+  - Function: SPI data output to TFT and SD card
+  - Interface: Hardware HSPI (shared bus)
   - Documented in: [lib/Display/include/st7789_display.h](../lib/Display/include/st7789_display.h#L24)
 
 - **GPIO36** - SPI CLK (Clock)
-  - Function: SPI clock signal for TFT
-  - Interface: Hardware HSPI (automatically configured by Adafruit_ST7789 library)
+  - Function: SPI clock signal for TFT and SD card
+  - Interface: Hardware HSPI (shared bus)
   - Documented in: [lib/Display/include/st7789_display.h](../lib/Display/include/st7789_display.h#L23)
 
 - **GPIO37** - SPI MISO (Master In, Slave Out)
-  - Function: SPI data input (currently unused by TFT)
-  - Status: Reserved for future use (SD card or other SPI peripherals)
+  - Function: SPI data input from SD card (SD build only)
+  - Status: Unused in flash build, active in SD card build
   - Interface: Hardware HSPI
+  - Documented in: [lib/Logger/include/sd_storage.h](../lib/Logger/include/sd_storage.h)
 
 ---
 
@@ -178,19 +180,76 @@ The ESP32-S3 uses dedicated hardware SPI pins for the TFT display:
 
 ---
 
+### SD Card Storage (Adalogger FeatherWing - SD Build Only)
+
+**Note:** SD card functionality is only available when building with the `sdcard` environment (`pio run -e sdcard`). The flash build does not include SD card support.
+
+#### Adalogger FeatherWing Hardware
+- **Product**: Adafruit Adalogger FeatherWing (Product ID: 2922)
+- **Mounting**: Top-mounted on ESP32-S3 Feather (display faces down)
+- **Features**:
+  - MicroSD card slot for removable storage (32GB+ recommended)
+  - PCF8523 Real-Time Clock with CR1220 battery backup
+  - Uses shared SPI bus with TFT display
+
+#### SD Card SPI Pins
+The Adalogger automatically connects to the standard FeatherWing SPI pins:
+
+- **GPIO10** - SD Card CS (Chip Select)
+  - Function: SD card chip select (active LOW)
+  - Dedicated pin for SD card (not shared with TFT)
+  - Defined in: [platformio.ini](../platformio.ini#L93) as `SD_CS_PIN=10`
+
+- **GPIO35** - SPI MOSI (Shared)
+  - Function: Data output to both TFT and SD card
+  - Shared between TFT CS (GPIO42) and SD CS (GPIO10)
+  - Defined in: [platformio.ini](../platformio.ini#L94) as `SD_MOSI_PIN=35`
+
+- **GPIO37** - SPI MISO (SD Card)
+  - Function: Data input from SD card
+  - Only active during SD card operations
+  - Defined in: [platformio.ini](../platformio.ini#L95) as `SD_MISO_PIN=37`
+
+- **GPIO36** - SPI CLK (Shared)
+  - Function: SPI clock for both TFT and SD card
+  - Shared between devices
+  - Defined in: [platformio.ini](../platformio.ini#L96) as `SD_SCK_PIN=36`
+
+#### Real-Time Clock (PCF8523)
+The Adalogger includes a battery-backed RTC on the I2C bus:
+
+- **I2C Address**: 0x68 (PCF8523)
+- **Pins**: GPIO3 (SDA), GPIO4 (SCL) - shared with STEMMA QT
+- **Battery**: CR1220 coin cell (keeps time when USB power lost)
+- **Purpose**: Accurate timestamps even without GPS lock
+
+#### SD Card Build Configuration
+To build with SD card support:
+```bash
+pio run -e sdcard      # Build SD card version
+pio run -e flash       # Build flash-only version (default)
+```
+
+**Storage Comparison:**
+
+| Feature | Flash Build | SD Card Build |
+|---------|-------------|---------------|
+| Storage Size | 2 MB internal flash | 32GB+ removable SD |
+| Download Method | WiFi only | WiFi or remove card |
+| App Partition | 1.5 MB | 1.5 MB (factory) + 1.5 MB (OTA) |
+| OTA Updates | Factory only | Dual partition (safe rollback) |
+| Removable | No | Yes |
+| Wear Leveling | Manual circular buffer | Built-in SD controller |
+| Best For | Short sessions | Full race weekends |
+
+---
+
 ## Reserved Pins for Future Use
 
 ### Recommended for External GPS (UART)
 If you want to add an external serial GPS module:
 - **TX2/RX2** (Serial2) - Can be assigned to any available GPIO pins
 - Recommended: Use GPIO8 and GPIO9 (currently available on the Feather breakout)
-
-### SD Card (If Adding External Storage)
-The SPI bus is already configured for the TFT. To add an SD card:
-- **SPI MOSI**: GPIO35 (shared with TFT)
-- **SPI MISO**: GPIO37 (shared, currently unused)
-- **SPI CLK**: GPIO36 (shared with TFT)
-- **SD CS**: Recommend **GPIO10** (separate chip select)
 
 ---
 
@@ -199,8 +258,9 @@ The SPI bus is already configured for the TFT. To add an SD card:
 | Device | I2C Address | Interface | Notes |
 |--------|-------------|-----------|-------|
 | PA1010D GPS | 0x10 | I2C | Only when GPS_USE_I2C = true |
-| ICM-20948 IMU | 0x69 | I2C | 9-DOF (Accel, Gyro, Compass) |
 | MAX17048 Battery Monitor | 0x36 | I2C | Fuel gauge |
+| PCF8523 RTC | 0x68 | I2C | Real-time clock (Adalogger FeatherWing, SD build only) |
+| ICM-20948 IMU | 0x69 | I2C | 9-DOF (Accel, Gyro, Compass) |
 
 ---
 
@@ -331,13 +391,6 @@ For adding a second GPS or external GPS module via UART:
   Serial2.begin(9600, SERIAL_8N1, GPS2_RX_PIN, GPS2_TX_PIN);
   ```
 
-#### SD Card Storage
-To add an SD card reader (shares SPI bus with TFT):
-- **MOSI**: GPIO35 (shared with TFT)
-- **MISO**: GPIO37 (currently unused)
-- **CLK**: GPIO36 (shared with TFT)
-- **CS**: GPIO10 (dedicated chip select for SD card)
-
 ---
 
 ## References
@@ -354,9 +407,11 @@ To add an SD card reader (shares SPI bus with TFT):
 | Date | Version | Changes |
 |------|---------|---------|
 | 2026-01-19 | 1.0 | Initial GPIO pin mapping documentation |
+| 2026-01-22 | 1.1 | Added SD card storage (Adalogger FeatherWing) pins and configuration |
 
 ---
 
-**Last Updated**: January 19, 2026  
-**Board**: Adafruit ESP32-S3 Feather TFT Reverse  
+**Last Updated**: January 22, 2026
+**Board**: Adafruit ESP32-S3 Feather TFT Reverse
+**Optional**: Adafruit Adalogger FeatherWing (SD card + RTC)
 **Firmware**: OpenPonyLogger v1.0

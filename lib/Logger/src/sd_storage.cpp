@@ -3,6 +3,7 @@
 #include <esp_crc.h>
 #include <esp_random.h>
 #include <esp_mac.h>
+#include <esp_heap_caps.h>
 #include <string.h>
 #include <esp_log.h>
 
@@ -27,6 +28,7 @@ SDStorage::SDStorage()
       m_nvs_handle(0), m_bytes_written(0),
       m_sample_buffer_pos(0), m_block_timestamp_us(0),
       m_writer_task(nullptr), m_sample_queue(nullptr),
+      m_queue_buffer(nullptr), m_queue_storage(nullptr),
       m_running(false), m_paused(false),
       m_queue_overruns(0), m_samples_queued(0) {
     memset(&m_session_header, 0, sizeof(m_session_header));
@@ -144,12 +146,37 @@ bool SDStorage::begin(RTCManager* rtc_manager) {
     // Write session header
     write_session_header();
 
-    // Create sample queue (in PSRAM)
-    m_sample_queue = xQueueCreate(QUEUE_SIZE, sizeof(SampleData));
-    if (!m_sample_queue) {
-        ESP_LOGE(TAG, "Failed to create sample queue");
+    // Create sample queue in PSRAM (not internal SRAM)
+    // Allocate queue control structure in PSRAM
+    m_queue_buffer = (StaticQueue_t*)heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_SPIRAM);
+    if (!m_queue_buffer) {
+        ESP_LOGE(TAG, "Failed to allocate queue buffer in PSRAM!");
         return false;
     }
+
+    // Allocate queue storage area in PSRAM
+    size_t queue_storage_size = QUEUE_SIZE * sizeof(SampleData);
+    m_queue_storage = (uint8_t*)heap_caps_malloc(queue_storage_size, MALLOC_CAP_SPIRAM);
+    if (!m_queue_storage) {
+        ESP_LOGE(TAG, "Failed to allocate queue storage in PSRAM!");
+        heap_caps_free(m_queue_buffer);
+        m_queue_buffer = nullptr;
+        return false;
+    }
+
+    // Create static queue using PSRAM-allocated buffers
+    m_sample_queue = xQueueCreateStatic(QUEUE_SIZE, sizeof(SampleData),
+                                        m_queue_storage, m_queue_buffer);
+    if (!m_sample_queue) {
+        ESP_LOGE(TAG, "Failed to create static queue!");
+        heap_caps_free(m_queue_buffer);
+        heap_caps_free(m_queue_storage);
+        m_queue_buffer = nullptr;
+        m_queue_storage = nullptr;
+        return false;
+    }
+
+    ESP_LOGI(TAG, "✓ Queue created in PSRAM (%zu bytes)", queue_storage_size);
 
     // Start writer task on Core 0
     m_running = true;
@@ -199,6 +226,16 @@ void SDStorage::end() {
         if (m_sample_queue) {
             vQueueDelete(m_sample_queue);
             m_sample_queue = nullptr;
+        }
+
+        // Free PSRAM allocations
+        if (m_queue_storage) {
+            heap_caps_free(m_queue_storage);
+            m_queue_storage = nullptr;
+        }
+        if (m_queue_buffer) {
+            heap_caps_free(m_queue_buffer);
+            m_queue_buffer = nullptr;
         }
     }
 
