@@ -28,16 +28,16 @@ This document describes the dual-core architecture, thread priorities, synchroni
 
 | Task Name | Core | Priority | Stack | Purpose | Data Structures Accessed | Synchronization |
 |-----------|------|----------|-------|---------|-------------------------|-----------------|
-| **RTLoggerThread** | 1 | 2 (High) | 8192 | Primary sensor collection loop | • m_last_gps/accel/gyro/compass/battery (read/write)<br>• PSRAM queue (write-only)<br>• SensorManager (read-only) | • **Volatile flags**: m_running, m_storage_paused, m_mark_event<br>• **Lock-free**: Queue write with 0 timeout |
+| **RTLoggerThread** | 1 | 2 (High) | 4096 | Primary sensor collection loop | • m_last_gps/accel/gyro/compass/battery (read/write)<br>• PSRAM queue (write-only)<br>• SensorManager (read-only) | • **Volatile flags**: m_running, m_storage_paused, m_mark_event<br>• **Lock-free**: Queue write with 0 timeout |
 | **Arduino loop()** | 1 | 1 | 8192 | Triggers storage write every 5s | • RTLoggerThread (read-only) | None (calls trigger_storage_write()) |
 
 ### Core 0 Tasks (Housekeeping)
 
 | Task Name | Core | Priority | Stack | Purpose | Data Structures Accessed | Synchronization |
 |-----------|------|----------|-------|---------|-------------------------|-----------------|
-| **StatusMonitor** | 0 | 1 (Low) | 8192 | Button handling, power management, BLE updates | • GPIO pins (buttons, VBUS)<br>• RTLoggerThread (read-only)<br>• FlashStorage/SDStorage (OBD queuing)<br>• IcarBleDriver (BLE updates)<br>• ST7789Display (SPI writes) | • **Volatile flags**: m_running, m_shutdown_pending<br>• **Yields**: vTaskDelay(1ms) after display/BLE ops |
+| **StatusMonitor** | 0 | 1 (Low) | 6144 | Button handling, power management, BLE updates | • GPIO pins (buttons, VBUS)<br>• RTLoggerThread (read-only)<br>• FlashStorage/SDStorage (OBD queuing)<br>• IcarBleDriver (BLE updates)<br>• ST7789Display (SPI writes) | • **Volatile flags**: m_running, m_shutdown_pending<br>• **Yields**: vTaskDelay(1ms) after display/BLE ops |
 | **FlashStorage/SDStorage Writer** | 0 | 1 (Low) | 8192 | Drains PSRAM queue to storage | • PSRAM queue (read via xQueueReceive)<br>• Flash partition or SD file (blocking writes)<br>• m_sample_buffer (4KB block)<br>• NVS (offset tracking) | • **Blocking OK**: Flash erase (1-10ms)<br>• **Yields**: Every 100ms queue timeout |
-| **TimeUpdateTask** | 0 | 1 (Low) | 4096 | GPS time sync to RTC/NVS | • GPS time queue<br>• RTCManager<br>• NVS (time storage) | • Small queue (10 items)<br>• Periodic wake (1Hz) |
+| **TimeUpdateTask** | 0 | 1 (Low) | 2048 | GPS time sync to RTC/NVS | • GPS time queue<br>• RTCManager<br>• NVS (time storage) | • Small queue (10 items)<br>• Periodic wake (1Hz) |
 | **WiFi/WebSocket** | 0 | Variable | N/A | AsyncWebServer handles WiFi | • WiFiManager static state<br>• ConfigManager (NVS reads) | • **Internal**: ESPAsyncWebServer threading<br>• **Static guards**: m_initialized flag |
 | **BLE Stack (NimBLE)** | 0 | Variable | N/A | OBD-II Bluetooth LE | • IcarBleDriver static state<br>• BLE scan/connection state | • **Requirement**: NimBLE MUST run on Core 0<br>• **Callbacks**: Run on Core 0 |
 
@@ -312,9 +312,9 @@ esp_deep_sleep_start();
 ### Internal SRAM (512 KB)
 
 **Reserved For:**
-- Stack for all tasks (~32 KB total)
+- Stack for all tasks (~28 KB total: RTLogger 4KB + loop 8KB + StatusMonitor 6KB + Storage 8KB + TimeUpdate 2KB)
 - Static variables and globals (~20 KB)
-- Heap for small allocations (~460 KB free)
+- Heap for small allocations (~464 KB free)
 
 **NOT Used For:**
 - Large queues (moved to PSRAM)

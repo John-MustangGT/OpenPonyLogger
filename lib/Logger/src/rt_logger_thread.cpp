@@ -37,15 +37,17 @@ bool RTLoggerThread::start() {
     
     m_running = true;
     m_sample_count = 0;
-    
-    // Create FreeRTOS task
-    BaseType_t result = xTaskCreate(
+
+    // Create FreeRTOS task pinned to Core 1 (real-time sensor acquisition)
+    // Core 1 is dedicated to sensor reading without blocking operations
+    BaseType_t result = xTaskCreatePinnedToCore(
         task_wrapper,           // Task function
         "RTLogger",             // Task name
-        4096,                   // Stack size
+        4096,                   // Stack size (sufficient for sensor polling + JSON serialization)
         this,                   // Parameter (pointer to this)
-        2,                      // Priority (0 = lowest, higher = more important)
-        &m_task_handle          // Task handle
+        2,                      // Priority (high - more important than housekeeping)
+        &m_task_handle,         // Task handle
+        1                       // Core 1 - CRITICAL: Must stay on Core 1 for deterministic timing
     );
     
     return result == pdPASS;
