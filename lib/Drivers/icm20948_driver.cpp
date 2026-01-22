@@ -10,19 +10,42 @@ static const char* TAG = "IMU";
 
 // Bank 0 registers
 #define ICM20948_REG_WHO_AM_I        0x00  // Bank 0
+#define ICM20948_REG_USER_CTRL       0x03  // Bank 0 - I2C master enable
 #define ICM20948_REG_PWR_MGMT_1      0x06  // Bank 0
 #define ICM20948_REG_TEMP_OUT_H      0x39  // Bank 0 (temperature)
 #define ICM20948_REG_TEMP_OUT_L      0x3A  // Bank 0 (temperature)
 #define ICM20948_REG_ACCEL_XOUT_H    0x2D  // Bank 0
 #define ICM20948_REG_GYRO_XOUT_H     0x33  // Bank 0
-#define ICM20948_REG_MAG_XOUT_L      0x49  // Bank 0 (mag data)
+#define ICM20948_REG_EXT_SLV_SENS_DATA_00 0x3B  // Bank 0 - External sensor data
+#define ICM20948_REG_MAG_XOUT_L      0x49  // Bank 0 (mag data - alias for backwards compat)
 
 // Bank 2 registers (sensor configuration)
 #define ICM20948_REG_GYRO_SMPLRT_DIV 0x00  // Bank 2
 #define ICM20948_REG_GYRO_CONFIG_1   0x01  // Bank 2
 #define ICM20948_REG_ACCEL_SMPLRT_DIV_1 0x10  // Bank 2
-#define ICM20948_REG_ACCEL_SMPLRT_DIV_2 0x11  // Bank 2  
+#define ICM20948_REG_ACCEL_SMPLRT_DIV_2 0x11  // Bank 2
 #define ICM20948_REG_ACCEL_CONFIG    0x14  // Bank 2
+
+// Bank 3 registers (I2C master configuration)
+#define ICM20948_REG_I2C_MST_CTRL    0x01  // Bank 3 - I2C master control
+#define ICM20948_REG_I2C_SLV0_ADDR   0x03  // Bank 3 - I2C slave 0 address
+#define ICM20948_REG_I2C_SLV0_REG    0x04  // Bank 3 - I2C slave 0 register
+#define ICM20948_REG_I2C_SLV0_CTRL   0x05  // Bank 3 - I2C slave 0 control
+#define ICM20948_REG_I2C_SLV0_DO     0x06  // Bank 3 - I2C slave 0 data out
+
+// AK09916 magnetometer registers (accessed via I2C master)
+#define AK09916_I2C_ADDR             0x0C  // AK09916 I2C address
+#define AK09916_REG_WIA2             0x01  // Who Am I register (should be 0x09)
+#define AK09916_REG_ST1              0x10  // Status 1
+#define AK09916_REG_HXL              0x11  // X-axis data low byte
+#define AK09916_REG_HXH              0x12  // X-axis data high byte
+#define AK09916_REG_HYL              0x13  // Y-axis data low byte
+#define AK09916_REG_HYH              0x14  // Y-axis data high byte
+#define AK09916_REG_HZL              0x15  // Z-axis data low byte
+#define AK09916_REG_HZH              0x16  // Z-axis data high byte
+#define AK09916_REG_ST2              0x18  // Status 2
+#define AK09916_REG_CNTL2            0x31  // Control 2
+#define AK09916_REG_CNTL3            0x32  // Control 3
 
 // ICM20948 Expected WHO_AM_I value
 #define ICM20948_WHO_AM_I_VALUE      0xEA
@@ -183,14 +206,48 @@ bool ICM20948Driver::configure_gyro() {
 }
 
 bool ICM20948Driver::configure_compass() {
-    // TODO: Implement AK09916 magnetometer configuration
-    // The ICM20948's internal magnetometer (AK09916) requires:
-    // 1. Enable I2C master mode in Bank 0
-    // 2. Configure I2C master to communicate with AK09916 (I2C addr 0x0C)
-    // 3. Set AK09916 to continuous measurement mode
-    // 4. Read data through EXT_SLV_SENS_DATA registers
-    // For now, compass is disabled
-    ESP_LOGW(TAG, "Compass not yet implemented - requires AK09916 init");
+    // The ICM20948's internal magnetometer (AK09916) requires I2C master configuration
+    ESP_LOGI(TAG, "Configuring AK09916 magnetometer...");
+
+    // Step 1: Enable I2C master mode (Bank 0)
+    write_register(ICM20948_REG_BANK_SEL, 0x00);  // Select Bank 0
+    delay(10);
+    write_register(ICM20948_REG_USER_CTRL, 0x20);  // Enable I2C master mode
+    delay(10);
+
+    // Step 2: Configure I2C master (Bank 3)
+    write_register(ICM20948_REG_BANK_SEL, 0x30);  // Select Bank 3
+    delay(10);
+    write_register(ICM20948_REG_I2C_MST_CTRL, 0x07);  // I2C master clock = 345.6 kHz
+    delay(10);
+
+    // Step 3: Reset AK09916 (write 0x01 to CNTL3)
+    // Configure slave 0 to write reset command
+    write_register(ICM20948_REG_I2C_SLV0_ADDR, AK09916_I2C_ADDR);  // AK09916 address (write mode)
+    write_register(ICM20948_REG_I2C_SLV0_REG, AK09916_REG_CNTL3);  // CNTL3 register
+    write_register(ICM20948_REG_I2C_SLV0_DO, 0x01);  // Reset command
+    write_register(ICM20948_REG_I2C_SLV0_CTRL, 0x81);  // Enable, 1 byte
+    delay(100);  // Wait for reset to complete
+
+    // Step 4: Set AK09916 to continuous measurement mode 4 (100Hz)
+    // Configure slave 0 to write continuous mode command
+    write_register(ICM20948_REG_I2C_SLV0_ADDR, AK09916_I2C_ADDR);  // AK09916 address (write mode)
+    write_register(ICM20948_REG_I2C_SLV0_REG, AK09916_REG_CNTL2);  // CNTL2 register
+    write_register(ICM20948_REG_I2C_SLV0_DO, 0x08);  // Continuous mode 4 (100Hz, 16-bit)
+    write_register(ICM20948_REG_I2C_SLV0_CTRL, 0x81);  // Enable, 1 byte
+    delay(10);
+
+    // Step 5: Configure slave 0 to read magnetometer data (8 bytes: ST1 + HXL/H + HYL/H + HZL/H + ST2)
+    write_register(ICM20948_REG_I2C_SLV0_ADDR, AK09916_I2C_ADDR | 0x80);  // AK09916 address with read bit
+    write_register(ICM20948_REG_I2C_SLV0_REG, AK09916_REG_ST1);  // Start reading from ST1
+    write_register(ICM20948_REG_I2C_SLV0_CTRL, 0x88);  // Enable, 8 bytes
+    delay(10);
+
+    // Return to Bank 0 for normal data reading
+    write_register(ICM20948_REG_BANK_SEL, 0x00);
+    delay(10);
+
+    ESP_LOGI(TAG, "✓ AK09916 magnetometer configured (100Hz continuous mode)");
     return true;
 }
 
@@ -235,14 +292,34 @@ bool ICM20948Driver::read_gyro_raw() {
 }
 
 bool ICM20948Driver::read_compass_raw() {
-    // Magnetometer not yet implemented - requires AK09916 configuration
-    // Just return zeros for now
-    int16_t raw_x = 0;
-    int16_t raw_y = 0;
-    int16_t raw_z = 0;
-    
+    // Read magnetometer data from external sensor data registers
+    // Data format: ST1(1) + HXL(1) + HXH(1) + HYL(1) + HYH(1) + HZL(1) + HZH(1) + ST2(1) = 8 bytes
+    uint8_t data[8];
+
+    if (!read_registers(ICM20948_REG_EXT_SLV_SENS_DATA_00, data, 8)) {
+        ESP_LOGW(TAG, "Failed to read magnetometer data");
+        return false;
+    }
+
+    // Check ST1 data ready bit (bit 0)
+    if ((data[0] & 0x01) == 0) {
+        // Data not ready
+        return false;
+    }
+
+    // Check ST2 overflow bit (bit 3) - if set, data is invalid
+    if (data[7] & 0x08) {
+        ESP_LOGW(TAG, "Magnetometer overflow detected");
+        return false;
+    }
+
+    // Extract 16-bit signed values (little-endian)
+    int16_t raw_x = (int16_t)((data[2] << 8) | data[1]);  // HXH, HXL
+    int16_t raw_y = (int16_t)((data[4] << 8) | data[3]);  // HYH, HYL
+    int16_t raw_z = (int16_t)((data[6] << 8) | data[5]);  // HZH, HZL
+
     convert_compass_data(raw_x, raw_y, raw_z);
-    return true;  // Don't fail the update cycle
+    return true;
 }
 
 void ICM20948Driver::convert_accel_data(int16_t raw_x, int16_t raw_y, int16_t raw_z) {
@@ -291,14 +368,30 @@ void ICM20948Driver::convert_compass_data(int16_t raw_x, int16_t raw_y, int16_t 
         static uint32_t last_debug = 0;
         uint32_t now = millis();
         if (now - last_debug > 5000) {
-            Serial.printf("Compass RAW: X=%d Y=%d Z=%d\n", raw_x, raw_y, raw_z);
+            ESP_LOGI(TAG, "Compass RAW: X=%d Y=%d Z=%d", raw_x, raw_y, raw_z);
             last_debug = now;
         }
     }
-    
-    // Convert raw magnetometer values (simplified - typically in uT)
-    const float scale = 1.0f / 256.0f;
+
+    // Convert raw magnetometer values to microTeslas (µT)
+    // AK09916 sensitivity: 0.15 µT/LSB in 16-bit mode
+    const float scale = 0.15f;
     m_compass_data.x = raw_x * scale;
     m_compass_data.y = raw_y * scale;
     m_compass_data.z = raw_z * scale;
+
+    // Debug: Print converted values and calculated heading
+    if (DebugFlags::ENABLE_IMU_DEBUG) {
+        static uint32_t last_debug = 0;
+        uint32_t now = millis();
+        if (now - last_debug > 5000) {
+            // Calculate heading for debugging (0-360 degrees)
+            // Assuming X points forward, Y points right (adjust based on mounting)
+            float heading = atan2(m_compass_data.y, m_compass_data.x) * 180.0f / M_PI;
+            if (heading < 0) heading += 360.0f;
+            ESP_LOGI(TAG, "Compass: X=%.2f Y=%.2f Z=%.2f µT, Heading=%.1f°",
+                     m_compass_data.x, m_compass_data.y, m_compass_data.z, heading);
+            last_debug = now;
+        }
+    }
 }

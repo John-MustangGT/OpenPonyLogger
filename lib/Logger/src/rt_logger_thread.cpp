@@ -196,12 +196,23 @@ void RTLoggerThread::task_loop() {
                 
                 // GPS data
                 doc["gps_valid"] = m_last_gps.valid;
+                doc["gps_time"] = m_last_gps.utc_time;  // GPS UTC time (Unix timestamp)
                 doc["latitude"] = m_last_gps.latitude;
                 doc["longitude"] = m_last_gps.longitude;
                 doc["altitude"] = m_last_gps.altitude;
                 doc["speed"] = m_last_gps.speed;
+                doc["course"] = m_last_gps.course;  // GPS course/track (0-360 degrees)
                 doc["satellites"] = m_last_gps.satellites;
-                
+
+                // Compass (magnetometer) - calculate heading from raw magnetic field
+                // Heading is calculated from X and Y components (assuming level mounting)
+                float heading = atan2(m_last_compass.y, m_last_compass.x) * 180.0f / M_PI;
+                if (heading < 0) heading += 360.0f;
+                doc["heading"] = heading;  // Magnetic heading (0-360 degrees)
+                doc["mag_x"] = m_last_compass.x;  // Raw magnetometer X (µT)
+                doc["mag_y"] = m_last_compass.y;  // Raw magnetometer Y (µT)
+                doc["mag_z"] = m_last_compass.z;  // Raw magnetometer Z (µT)
+
                 // Accelerometer
                 doc["accel_x"] = m_last_accel.x;
                 doc["accel_y"] = m_last_accel.y;
@@ -225,7 +236,7 @@ void RTLoggerThread::task_loop() {
                 // Clients can get OBD data from storage/status reports if needed
 
                 // Serialize and broadcast
-                char json_buffer[512];
+                char json_buffer[600];  // Increased from 512 to accommodate compass data
                 size_t n = serializeJson(doc, json_buffer, sizeof(json_buffer));
                 if (n > 0) {
                     WiFiManager::broadcast_json(json_buffer);
