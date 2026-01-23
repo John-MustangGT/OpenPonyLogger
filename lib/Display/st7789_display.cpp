@@ -16,6 +16,10 @@
 #define TFT_WIDTH  240
 #define TFT_HEIGHT 135
 
+// Static PSRAM framebuffer - 240x135x2 = 64,800 bytes
+// Using EXT_RAM_ATTR forces this into PSRAM, bypassing heap allocator
+static EXT_RAM_ATTR uint16_t s_framebuffer[TFT_WIDTH * TFT_HEIGHT];
+
 // Static member initialization
 Adafruit_ST7789* ST7789Display::m_tft = nullptr;
 uint16_t* ST7789Display::m_framebuffer = nullptr;
@@ -145,19 +149,18 @@ bool ST7789Display::init() {
     digitalWrite(TFT_BACKLITE, HIGH);
     delay(100);
     
-    // Step 8: Allocate framebuffer EXCLUSIVELY in PSRAM for flicker-free rendering
-    Serial.println("[TFT] Allocating framebuffer (240x135x2 = 64,800 bytes) ONLY in PSRAM...");
+    // Step 8: Use static PSRAM framebuffer (bypasses heap allocator to avoid DRAM overhead)
+    Serial.println("[TFT] Initializing static PSRAM framebuffer (240x135x2 = 64,800 bytes)...");
     size_t framebuffer_size = TFT_WIDTH * TFT_HEIGHT * sizeof(uint16_t);  // 64,800 bytes
 
-    Serial.printf("[TFT] Free DRAM before: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
-    Serial.printf("[TFT] Free PSRAM before: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    size_t dram_before = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    size_t psram_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
 
-    // Allocate raw framebuffer in PSRAM ONLY (no heap allocator, no object wrapper)
-    m_framebuffer = (uint16_t*)heap_caps_malloc(framebuffer_size, MALLOC_CAP_SPIRAM);
-    if (m_framebuffer == nullptr) {
-        Serial.println("[TFT] ERROR: Failed to allocate framebuffer in PSRAM!");
-        return false;
-    }
+    Serial.printf("[TFT] Free DRAM before: %u bytes\n", dram_before);
+    Serial.printf("[TFT] Free PSRAM before: %u bytes\n", psram_before);
+
+    // Point to static PSRAM buffer (no heap allocation!)
+    m_framebuffer = s_framebuffer;
 
     // Verify pointer is in PSRAM address range (ESP32-S3 PSRAM starts at 0x3C000000)
     Serial.printf("[TFT] Framebuffer pointer: 0x%08X\n", (uint32_t)m_framebuffer);
@@ -167,13 +170,14 @@ bool ST7789Display::init() {
     // Clear framebuffer
     memset(m_framebuffer, 0, framebuffer_size);
 
-    Serial.printf("[TFT] Framebuffer allocated: %u bytes\n", framebuffer_size);
-    Serial.printf("[TFT] Free DRAM after: %u bytes (change: %d bytes)\n",
-                 heap_caps_get_free_size(MALLOC_CAP_8BIT),
-                 (int)heap_caps_get_free_size(MALLOC_CAP_8BIT) - 2378563);
-    Serial.printf("[TFT] Free PSRAM after: %u bytes (change: %d bytes)\n",
-                 heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-                 (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) - 2095103);
+    size_t dram_after = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    size_t psram_after = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+
+    Serial.printf("[TFT] Framebuffer ready: %u bytes in PSRAM (static allocation)\n", framebuffer_size);
+    Serial.printf("[TFT] Free DRAM after: %u bytes (change: %d bytes) - MUST BE ZERO!\n",
+                 dram_after, (int)(dram_after - dram_before));
+    Serial.printf("[TFT] Free PSRAM after: %u bytes (change: %d bytes) - SHOULD BE ZERO (static)\n",
+                 psram_after, (int)(psram_after - psram_before));
 
     // Step 9: Draw test pattern
     Serial.println("[TFT] Drawing initialization message...");
