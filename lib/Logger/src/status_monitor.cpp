@@ -213,7 +213,10 @@ void StatusMonitor::task_loop() {
     uint32_t broadcast_count = 0;
     uint32_t yield_count = 0;
 
+    Serial.println(">>> StatusMonitor::task_loop() ENTRY <<<");
+    delay(100);  // Ensure it gets flushed
     ESP_LOGI(TAG, "[StatusMonitor] Task loop started on Core 0");
+    Serial.println(">>> After ESP_LOGI <<<");
 
     while (m_running) {
         loop_count++;
@@ -564,9 +567,10 @@ void StatusMonitor::task_loop() {
         // RTLoggerThread on Core 1 handles all WebSocket broadcasts at 5Hz (200ms interval).
         // This eliminates duplicate broadcasts and moves JSON serialization off Core 0.
 
-        // Update display and serial monitor at 1Hz
+        // TEMPORARILY DISABLED: Display updates causing 130KB allocation (65KB DRAM + 65KB PSRAM)
+        // TODO: Fix GFXcanvas16 double allocation issue
         static uint32_t last_display_update = 0;
-        if (m_rt_logger != nullptr && now - last_display_update >= 1000) {
+        if (false && m_rt_logger != nullptr && now - last_display_update >= 1000) {
             ESP_LOGI(TAG, "[DEBUG] Starting 1Hz display update...");
 
             DisplayMode current_mode = ST7789Display::get_display_mode();
