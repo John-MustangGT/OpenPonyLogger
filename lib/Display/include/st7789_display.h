@@ -16,6 +16,27 @@ enum class DisplayMode {
 };
 
 /**
+ * @brief PSRAM-allocated 16-bit canvas for flicker-free rendering
+ *
+ * This class replaces GFXcanvas16 to ensure framebuffer is allocated
+ * exclusively in PSRAM (not DRAM). Standard GFXcanvas16 was allocating
+ * 65KB in both DRAM and PSRAM (130KB total) causing crashes.
+ */
+class PSRAMCanvas16 : public Adafruit_GFX {
+public:
+    PSRAMCanvas16(uint16_t w, uint16_t h);
+    ~PSRAMCanvas16();
+
+    void drawPixel(int16_t x, int16_t y, uint16_t color) override;
+    void fillScreen(uint16_t color) override;
+    uint16_t* getBuffer() { return m_buffer; }
+
+private:
+    uint16_t* m_buffer;
+    size_t m_buffer_size;
+};
+
+/**
  * @brief ST7789 TFT Display driver for Adafruit ESP32-S3 Feather Reverse TFT
  * Display: 1.14" IPS LCD, 240x135 pixels, SPI interface
  * 
@@ -131,7 +152,7 @@ public:
 
 private:
     static Adafruit_ST7789* m_tft;
-    static GFXcanvas16* m_canvas;  // Framebuffer for flicker-free rendering (240x135)
+    static PSRAMCanvas16* m_canvas;  // PSRAM framebuffer for flicker-free rendering (240x135)
     static bool m_initialized;
     static DisplayMode m_current_mode;
 };

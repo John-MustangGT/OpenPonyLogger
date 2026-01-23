@@ -12,9 +12,60 @@
 #define TFT_BACKLITE 45
 #define TFT_I2C_POWER 7
 
+// ============================================================================
+// PSRAMCanvas16 Implementation - PSRAM-only framebuffer
+// ============================================================================
+
+PSRAMCanvas16::PSRAMCanvas16(uint16_t w, uint16_t h)
+    : Adafruit_GFX(w, h), m_buffer(nullptr), m_buffer_size(0) {
+    m_buffer_size = w * h * sizeof(uint16_t);
+
+    // Allocate buffer ONLY in PSRAM using heap_caps_malloc
+    m_buffer = (uint16_t*)heap_caps_malloc(m_buffer_size, MALLOC_CAP_SPIRAM);
+
+    if (m_buffer != nullptr) {
+        // Clear buffer to black
+        memset(m_buffer, 0, m_buffer_size);
+    } else {
+        Serial.printf("[PSRAMCanvas16] ERROR: Failed to allocate %u bytes in PSRAM!\n", m_buffer_size);
+    }
+}
+
+PSRAMCanvas16::~PSRAMCanvas16() {
+    if (m_buffer != nullptr) {
+        heap_caps_free(m_buffer);
+        m_buffer = nullptr;
+    }
+}
+
+void PSRAMCanvas16::drawPixel(int16_t x, int16_t y, uint16_t color) {
+    if (m_buffer == nullptr || x < 0 || y < 0 || x >= _width || y >= _height) {
+        return;
+    }
+    m_buffer[y * _width + x] = color;
+}
+
+void PSRAMCanvas16::fillScreen(uint16_t color) {
+    if (m_buffer == nullptr) {
+        return;
+    }
+
+    // Fast fill using memset for black (0x0000) or white (0xFFFF)
+    if (color == 0x0000) {
+        memset(m_buffer, 0, m_buffer_size);
+    } else if (color == 0xFFFF) {
+        memset(m_buffer, 0xFF, m_buffer_size);
+    } else {
+        // General case: fill with specific color
+        for (size_t i = 0; i < (_width * _height); i++) {
+            m_buffer[i] = color;
+        }
+    }
+}
+
 // Static member initialization
 Adafruit_ST7789* ST7789Display::m_tft = nullptr;
-GFXcanvas16* ST7789Display::m_canvas = nullptr;
+PSRAMCanvas16* ST7789Display::m_canvas = nullptr;
 bool ST7789Display::m_initialized = false;
 DisplayMode ST7789Display::m_current_mode = DisplayMode::MAIN_SCREEN;
 
@@ -81,23 +132,23 @@ bool ST7789Display::init() {
     digitalWrite(TFT_BACKLITE, HIGH);
     delay(100);
     
-    // Step 8: Allocate framebuffer for flicker-free rendering
-    Serial.println("[TFT] Allocating framebuffer (240x135x2 = 64,800 bytes)...");
+    // Step 8: Allocate framebuffer EXCLUSIVELY in PSRAM for flicker-free rendering
+    Serial.println("[TFT] Allocating framebuffer (240x135x2 = 64,800 bytes) in PSRAM...");
     size_t canvas_size = 240 * 135 * 2;  // 16-bit per pixel
 
-    Serial.printf("[TFT] Free DRAM: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
-    Serial.printf("[TFT] Free PSRAM: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    Serial.printf("[TFT] Free DRAM before: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    Serial.printf("[TFT] Free PSRAM before: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
-    // Allocate canvas (GFXcanvas16 uses malloc, will use DRAM or PSRAM depending on config)
-    m_canvas = new GFXcanvas16(240, 135);
-    if (m_canvas == nullptr) {
-        Serial.println("[TFT] ERROR: Failed to allocate canvas framebuffer!");
+    // Allocate PSRAMCanvas16 (uses heap_caps_malloc with MALLOC_CAP_SPIRAM - PSRAM only!)
+    m_canvas = new PSRAMCanvas16(240, 135);
+    if (m_canvas == nullptr || m_canvas->getBuffer() == nullptr) {
+        Serial.println("[TFT] ERROR: Failed to allocate PSRAM canvas framebuffer!");
         return false;
     }
 
-    Serial.printf("[TFT] Canvas allocated: %u bytes\n", canvas_size);
-    Serial.printf("[TFT] Free DRAM after: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
-    Serial.printf("[TFT] Free PSRAM after: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    Serial.printf("[TFT] Canvas allocated: %u bytes in PSRAM\n", canvas_size);
+    Serial.printf("[TFT] Free DRAM after: %u bytes (should be unchanged)\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    Serial.printf("[TFT] Free PSRAM after: %u bytes (should decrease by ~65KB)\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     // Step 9: Draw test pattern
     Serial.println("[TFT] Drawing initialization message...");

@@ -584,10 +584,9 @@ void StatusMonitor::task_loop() {
         // RTLoggerThread on Core 1 handles all WebSocket broadcasts at 5Hz (200ms interval).
         // This eliminates duplicate broadcasts and moves JSON serialization off Core 0.
 
-        // TEMPORARILY DISABLED: Display updates causing 130KB allocation (65KB DRAM + 65KB PSRAM)
-        // TODO: Fix GFXcanvas16 double allocation issue
+        // Display updates: 1Hz refresh using PSRAM-only framebuffer
         static uint32_t last_display_update = 0;
-        if (false && m_rt_logger != nullptr && now - last_display_update >= 1000) {
+        if (m_rt_logger != nullptr && now - last_display_update >= 1000) {
             ESP_LOGI(TAG, "[DEBUG] Starting 1Hz display update...");
 
             DisplayMode current_mode = ST7789Display::get_display_mode();
