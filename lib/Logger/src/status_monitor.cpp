@@ -217,8 +217,15 @@ void StatusMonitor::task_loop() {
     delay(100);  // Ensure it gets flushed
     ESP_LOGI(TAG, "[StatusMonitor] Task loop started on Core 0");
     Serial.println(">>> After ESP_LOGI <<<");
+    Serial.println(">>> Entering while loop <<<");
+    delay(100);
 
     while (m_running) {
+        // Print first few loops to confirm we're executing
+        if (loop_count < 5) {
+            Serial.printf(">>> Loop iteration %u <<<\n", loop_count);
+        }
+
         loop_count++;
         uint32_t now = millis();
 
@@ -296,6 +303,11 @@ void StatusMonitor::task_loop() {
             }
         }
         d2_last_state = d2_state;
+
+        // Debug: After button handling
+        if (loop_count < 5) {
+            Serial.println(">>> After button handling <<<");
+        }
 
         // ===== Auto-Start/Stop Logic =====
         // Separate auto-start/stop for dynamics (GPS/IMU) vs data (OBD)
@@ -562,6 +574,11 @@ void StatusMonitor::task_loop() {
         // Yield to watchdog to prevent TWDT reset on Core 0
         vTaskDelay(pdMS_TO_TICKS(1));
         yield_count++;
+
+        // Debug: After all main loop logic
+        if (loop_count < 5) {
+            Serial.println(">>> After main loop logic, before display <<<");
+        }
 
         // NOTE: WebSocket broadcasts removed from StatusMonitor to reduce Core 0 load.
         // RTLoggerThread on Core 1 handles all WebSocket broadcasts at 5Hz (200ms interval).
