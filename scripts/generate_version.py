@@ -113,6 +113,9 @@ inline const char* get_full_version_string() {{
     # Write to include directory
     output_path = os.path.join(env.get("PROJECT_DIR"), "lib", "Config", "include", "version_info.h")
 
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
     # Only write if content changed (avoid unnecessary rebuilds)
     write_file = True
     if os.path.exists(output_path):
