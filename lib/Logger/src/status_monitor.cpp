@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <esp_log.h>
 #include <esp_sleep.h>
+#include <esp_heap_caps.h>
 #include <driver/gpio.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
@@ -608,7 +609,27 @@ void StatusMonitor::task_loop() {
             // Yield after display update to prevent watchdog starvation
             vTaskDelay(pdMS_TO_TICKS(1));
         }
-        
+
+        // Memory monitoring every 5 seconds (lightweight heap usage tracking)
+        static uint32_t last_memory_report = 0;
+        if (now - last_memory_report >= 5000) {
+            // Get memory statistics (very fast calls, no allocations)
+            size_t free_dram = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+            size_t total_dram = heap_caps_get_total_size(MALLOC_CAP_8BIT);
+            size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+            size_t total_psram = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+
+            // Calculate usage percentages
+            uint8_t dram_used_pct = (uint8_t)(((total_dram - free_dram) * 100) / total_dram);
+            uint8_t psram_used_pct = (total_psram > 0) ? (uint8_t)(((total_psram - free_psram) * 100) / total_psram) : 0;
+
+            ESP_LOGI(TAG, "[Memory] DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%)",
+                     (total_dram - free_dram) / 1024, total_dram / 1024, dram_used_pct,
+                     (total_psram - free_psram) / 1024, total_psram / 1024, psram_used_pct);
+
+            last_memory_report = now;
+        }
+
         // Print status at regular intervals (rate-limited to reduce Core 0 serial overhead)
         if (now - m_last_report_time >= m_report_interval_ms) {
             // Show sensor sample counts - rate limited to every 10 seconds instead of 1Hz
