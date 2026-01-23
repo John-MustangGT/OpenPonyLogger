@@ -81,19 +81,23 @@ bool ST7789Display::init() {
     digitalWrite(TFT_BACKLITE, HIGH);
     delay(100);
     
-    // Step 8: Allocate PSRAM framebuffer for flicker-free rendering
-    Serial.println("[TFT] Allocating PSRAM framebuffer (240x135x2 = 64,800 bytes)...");
-    m_canvas = new GFXcanvas16(240, 135);
+    // Step 8: Allocate framebuffer for flicker-free rendering
+    Serial.println("[TFT] Allocating framebuffer (240x135x2 = 64,800 bytes)...");
+    size_t canvas_size = 240 * 135 * 2;  // 16-bit per pixel
 
+    Serial.printf("[TFT] Free DRAM: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    Serial.printf("[TFT] Free PSRAM: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+    // Allocate canvas (GFXcanvas16 uses malloc, will use DRAM or PSRAM depending on config)
+    m_canvas = new GFXcanvas16(240, 135);
     if (m_canvas == nullptr) {
         Serial.println("[TFT] ERROR: Failed to allocate canvas framebuffer!");
         return false;
     }
 
-    // Verify PSRAM allocation
-    size_t canvas_size = 240 * 135 * 2;  // 16-bit per pixel
     Serial.printf("[TFT] Canvas allocated: %u bytes\n", canvas_size);
-    Serial.printf("[TFT] Free PSRAM: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    Serial.printf("[TFT] Free DRAM after: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    Serial.printf("[TFT] Free PSRAM after: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     // Step 9: Draw test pattern
     Serial.println("[TFT] Drawing initialization message...");
