@@ -26,23 +26,24 @@ def erase_flash_callback(*args, **kwargs):
     print("=" * 60)
     env.Execute("esptool.py --chip esp32s3 --port $UPLOAD_PORT erase_flash")
 
-# Add custom targets
-env.AddCustomTarget(
-    name="erase",
-    dependencies=None,
-    actions=erase_callback,
-    title="Quick Erase",
-    description="Erase application partition only (keeps NVS config)"
-)
+# Add custom targets (only if not already added)
+if "erase" not in env.get("__PIO_TARGETS", {}):
+    env.AddCustomTarget(
+        name="erase",
+        dependencies=None,
+        actions=erase_callback,
+        title="Quick Erase",
+        description="Erase application partition only (keeps NVS config)"
+    )
 
-env.AddCustomTarget(
-    name="erase_flash",
-    dependencies=None,
-    actions=erase_flash_callback,
-    title="Full Chip Erase",
-    description="Erase entire flash including NVS (factory reset)"
-)
+    env.AddCustomTarget(
+        name="erase_flash",
+        dependencies=None,
+        actions=erase_flash_callback,
+        title="Full Chip Erase",
+        description="Erase entire flash including NVS (factory reset)"
+    )
 
-print("Custom targets added:")
-print("  - 'erase': Quick erase (app only)")
-print("  - 'erase_flash': Full chip erase (including NVS)")
+    print("Custom targets added:")
+    print("  - 'erase': Quick erase (app only)")
+    print("  - 'erase_flash': Full chip erase (including NVS)")
