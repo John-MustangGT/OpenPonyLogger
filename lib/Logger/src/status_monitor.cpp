@@ -20,6 +20,7 @@
 #include <driver/gpio.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <freertos/task.h>
 
 // Button GPIO pins
 #define BUTTON_D0 0   // Pause/Resume
@@ -610,22 +611,73 @@ void StatusMonitor::task_loop() {
             vTaskDelay(pdMS_TO_TICKS(1));
         }
 
-        // Memory monitoring every 5 seconds (lightweight heap usage tracking)
+        // Memory and CPU monitoring every 5 seconds
         static uint32_t last_memory_report = 0;
         if (now - last_memory_report >= 5000) {
-            // Get memory statistics (very fast calls, no allocations)
+            // ========== MEMORY STATS ==========
             size_t free_dram = heap_caps_get_free_size(MALLOC_CAP_8BIT);
             size_t total_dram = heap_caps_get_total_size(MALLOC_CAP_8BIT);
             size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
             size_t total_psram = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
 
-            // Calculate usage percentages
             uint8_t dram_used_pct = (uint8_t)(((total_dram - free_dram) * 100) / total_dram);
             uint8_t psram_used_pct = (total_psram > 0) ? (uint8_t)(((total_psram - free_psram) * 100) / total_psram) : 0;
 
-            ESP_LOGI(TAG, "[Memory] DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%)",
+            // ========== CPU STATS ==========
+            // Get current runtime for idle tasks (one per core)
+            static uint32_t last_idle0_time = 0;
+            static uint32_t last_idle1_time = 0;
+            static uint32_t last_total_time = 0;
+
+            TaskHandle_t idle0 = xTaskGetIdleTaskHandleForCPU(0);
+            TaskHandle_t idle1 = xTaskGetIdleTaskHandleForCPU(1);
+
+            // Get runtime stats (in CPU ticks since boot)
+            uint32_t idle0_time = 0;
+            uint32_t idle1_time = 0;
+
+            #ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+                TaskStatus_t task_status;
+                if (idle0) {
+                    vTaskGetInfo(idle0, &task_status, pdTRUE, eInvalid);
+                    idle0_time = task_status.ulRunTimeCounter;
+                }
+                if (idle1) {
+                    vTaskGetInfo(idle1, &task_status, pdTRUE, eInvalid);
+                    idle1_time = task_status.ulRunTimeCounter;
+                }
+            #endif
+
+            uint32_t total_time = idle0_time + idle1_time;
+
+            // Calculate CPU load as (1 - idle_percentage)
+            uint8_t core0_load = 0;
+            uint8_t core1_load = 0;
+
+            if (last_total_time > 0) {
+                uint32_t delta_idle0 = idle0_time - last_idle0_time;
+                uint32_t delta_idle1 = idle1_time - last_idle1_time;
+                uint32_t delta_total = total_time - last_total_time;
+
+                if (delta_total > 0) {
+                    // CPU load = 100 - (idle_time * 100 / total_time)
+                    // Since we have 2 cores, each idle task represents 50% of total time when idle
+                    core0_load = (delta_total > delta_idle0 * 2) ?
+                                 (uint8_t)(100 - (delta_idle0 * 200) / delta_total) : 0;
+                    core1_load = (delta_total > delta_idle1 * 2) ?
+                                 (uint8_t)(100 - (delta_idle1 * 200) / delta_total) : 0;
+                }
+            }
+
+            last_idle0_time = idle0_time;
+            last_idle1_time = idle1_time;
+            last_total_time = total_time;
+
+            // Print combined memory + CPU stats
+            ESP_LOGI(TAG, "[System] DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%) | CPU0: %u%% | CPU1: %u%%",
                      (total_dram - free_dram) / 1024, total_dram / 1024, dram_used_pct,
-                     (total_psram - free_psram) / 1024, total_psram / 1024, psram_used_pct);
+                     (total_psram - free_psram) / 1024, total_psram / 1024, psram_used_pct,
+                     core0_load, core1_load);
 
             last_memory_report = now;
         }
