@@ -209,138 +209,13 @@ void ST7789Display::update(uint32_t uptime_ms,
                           uint8_t gps_minute,
                           uint8_t gps_second,
                           float gps_speed) {
-    if (!m_initialized || m_tft == nullptr || m_framebuffer == nullptr) return;
-
     // TEMPORARILY DISABLED - need to reimplement rendering without GFXcanvas
     // TODO: Rewrite rendering to use framebuffer directly or TFT functions
-    return;
-
-    // ========== RENDER TO PSRAM CANVAS (NO SPI TRANSACTIONS) ==========
-    // Clear canvas once (all rendering happens in RAM)
-    m_canvas->fillScreen(ST77XX_BLACK);
-
-    // Calculate uptime
-    uint32_t uptime_sec = uptime_ms / 1000;
-    uint32_t hours = uptime_sec / 3600;
-    uint32_t minutes = (uptime_sec / 60) % 60;
-    uint32_t seconds = uptime_sec % 60;
-
-    // ========== ROW 1: TIME & SAMPLE COUNT ==========
-    char timestr[16];
-    snprintf(timestr, sizeof(timestr), "%u:%02u:%02u", hours, minutes, seconds);
-    m_canvas->setTextSize(2);
-    m_canvas->setTextColor(ST77XX_CYAN);
-    m_canvas->setCursor(2, 2);
-    m_canvas->print(timestr);
-
-    // Sample count on right side with logging state symbol
-    char sampstr[32];
-    if (sample_count >= 1000000) {
-        snprintf(sampstr, sizeof(sampstr), "%.1fM%s", sample_count / 1000000.0f, is_paused ? "P" : "*");
-    } else if (sample_count >= 1000) {
-        snprintf(sampstr, sizeof(sampstr), "%.1fK%s", sample_count / 1000.0f, is_paused ? "P" : "*");
-    } else {
-        snprintf(sampstr, sizeof(sampstr), "%u%s", sample_count, is_paused ? "P" : "*");
-    }
-    m_canvas->setTextColor(ST77XX_YELLOW);
-    m_canvas->setCursor(140, 5);
-    m_canvas->print(sampstr);
-
-    // ========== ROW 2: ACCELEROMETER DATA ==========
-    char accel_line[40];
-    snprintf(accel_line, sizeof(accel_line), "A:%+.2f %+.2f %+.2f", accel_x, accel_y, accel_z);
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setCursor(2, 28);
-    m_canvas->print(accel_line);
-
-    // ========== ROW 3: GYROSCOPE DATA ==========
-    char gyro_line[40];
-    snprintf(gyro_line, sizeof(gyro_line), "G:%+.1f %+.1f %+.1f", gyro_x, gyro_y, gyro_z);
-    m_canvas->setCursor(2, 48);
-    m_canvas->print(gyro_line);
-
-    // ========== ROW 4: GPS COORDINATES ==========
-    if (gps_valid) {
-        char gps_line[40];
-        snprintf(gps_line, sizeof(gps_line), "%+6.1f %+7.1f %5.0fm",
-                 gps_latitude, gps_longitude, gps_altitude);
-        m_canvas->setTextColor(ST77XX_GREEN);
-        m_canvas->setCursor(2, 68);
-        m_canvas->print(gps_line);
-    } else {
-        m_canvas->setTextColor(ST77XX_RED);
-        m_canvas->setCursor(2, 68);
-        m_canvas->print("No GPS Fix");
-    }
-
-    // ========== ROW 5: GPS SPEED ==========
-    if (gps_valid) {
-        float display_speed = convert_speed(gps_speed);
-        char gps_str[32];
-        snprintf(gps_str, sizeof(gps_str), "Spd:%.1f%s", display_speed, get_speed_unit());
-        m_canvas->setTextColor(ST77XX_GREEN);
-        m_canvas->setCursor(2, 88);
-        m_canvas->print(gps_str);
-    } else {
-        m_canvas->setTextColor(ST77XX_YELLOW);
-        m_canvas->setCursor(2, 88);
-        m_canvas->print("GPS Waiting");
-    }
-
-    // ========== BOTTOM: GPS TIME & BATTERY ==========
-    m_canvas->setTextSize(1);
-
-    uint16_t bar_height = 6;
-    uint16_t bar_y = 135 - bar_height - 4;  // Hard-coded height
-    uint16_t bar_width = 40;
-
-    // Battery bar color
-    uint16_t bar_color = ST77XX_GREEN;
-    if (battery_soc < 20) {
-        bar_color = ST77XX_RED;
-    } else if (battery_soc < 50) {
-        bar_color = ST77XX_ORANGE;
-    }
-
-    // Draw battery bar
-    uint16_t filled_width = (uint16_t)(battery_soc / 100.0f * bar_width);
-    m_canvas->fillRect(2, bar_y, filled_width, bar_height, bar_color);
-    m_canvas->drawRect(2, bar_y, bar_width, bar_height, ST77XX_WHITE);
-
-    // Battery percentage
-    char pct_str[16];
-    snprintf(pct_str, sizeof(pct_str), "%.0f%%", battery_soc);
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setCursor(45, bar_y + 1);
-    m_canvas->print(pct_str);
-
-    // GPS time (no String allocations!)
-    char time_str[12];
-    if (gps_valid) {
-        snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u", gps_hour, gps_minute, gps_second);
-        m_canvas->setTextColor(ST77XX_CYAN);
-    } else {
-        snprintf(time_str, sizeof(time_str), "--:--:--");
-        m_canvas->setTextColor(ST77XX_YELLOW);
-    }
-    m_canvas->setCursor(75, bar_y + 1);
-    m_canvas->print(time_str);
-
-    // Sampling Hz (clamped)
-    if (!isfinite(sample_hz) || sample_hz < 0.0f) {
-        sample_hz = 0.0f;
-    } else if (sample_hz > 999.9f) {
-        sample_hz = 999.9f;
-    }
-    char hz_str[12];
-    snprintf(hz_str, sizeof(hz_str), "%.1fHz", sample_hz);
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setCursor(160, bar_y + 1);
-    m_canvas->print(hz_str);
-
-    // ========== SINGLE SPI TRANSFER: PUSH CANVAS TO DISPLAY ==========
-    // This is the ONLY SPI transaction - all rendering happened in PSRAM
-    m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
+    (void)uptime_ms; (void)temp; (void)accel_x; (void)accel_y; (void)accel_z;
+    (void)gyro_x; (void)gyro_y; (void)gyro_z; (void)battery_soc; (void)battery_voltage;
+    (void)gps_valid; (void)sample_count; (void)sample_hz; (void)is_paused;
+    (void)gps_latitude; (void)gps_longitude; (void)gps_altitude;
+    (void)gps_hour; (void)gps_minute; (void)gps_second; (void)gps_speed;
 }
 
 void ST7789Display::cycle_display_mode() {
@@ -388,93 +263,14 @@ DisplayMode ST7789Display::get_display_mode() {
 
 void ST7789Display::show_info_screen(const char* ip_address, const char* ble_name) {
     if (!m_initialized || m_tft == nullptr || m_framebuffer == nullptr) return;
-    return; // TEMPORARILY DISABLED
-
-    // Render to canvas
-    m_canvas->fillScreen(ST77XX_BLACK);
-
-    // Title
-    m_canvas->setTextColor(ST77XX_CYAN);
-    m_canvas->setTextSize(2);
-    m_canvas->setCursor(5, 5);
-    m_canvas->println("NETWORK INFO");
-
-    // IP Address
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setTextSize(1);
-    m_canvas->setCursor(5, 30);
-    m_canvas->println("IP Address:");
-    m_canvas->setTextColor(ST77XX_YELLOW);
-    m_canvas->setCursor(5, 40);
-    if (ip_address != nullptr && ip_address[0] != '\0') {
-        m_canvas->println(ip_address);
-    } else {
-        m_canvas->println("Not available");
-    }
-
-    // BLE Name
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setCursor(5, 60);
-    m_canvas->println("BLE Device:");
-    m_canvas->setTextColor(ST77XX_GREEN);
-    m_canvas->setCursor(5, 70);
-    if (ble_name != nullptr && ble_name[0] != '\0') {
-        m_canvas->println(ble_name);
-    } else {
-        m_canvas->println("Not configured");
-    }
-
-    // Footer
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setTextSize(1);
-    m_canvas->setCursor(5, 120);
-    m_canvas->println("Press D1 to cycle");
-
-    // Push to display
-    m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
+    // TEMPORARILY DISABLED
+    (void)ip_address; (void)ble_name;
 }
 
 void ST7789Display::show_shutdown_screen(uint32_t seconds_remaining) {
     if (!m_initialized || m_tft == nullptr || m_framebuffer == nullptr) return;
     return; // TEMPORARILY DISABLED
 
-    // Render to canvas
-    m_canvas->fillScreen(ST77XX_BLACK);
-
-    // Title
-    m_canvas->setTextColor(ST77XX_MAGENTA);
-    m_canvas->setTextSize(2);
-    m_canvas->setCursor(20, 10);
-    m_canvas->println("POWER LOSS");
-
-    // Warning icon (simple exclamation)
-    m_canvas->setTextColor(ST77XX_YELLOW);
-    m_canvas->setTextSize(4);
-    m_canvas->setCursor(100, 35);
-    m_canvas->println("!");
-
-    // Shutdown message
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setTextSize(1);
-    m_canvas->setCursor(15, 75);
-    m_canvas->println("USB power disconnected");
-
-    // Countdown
-    m_canvas->setTextColor(ST77XX_CYAN);
-    m_canvas->setTextSize(2);
-    m_canvas->setCursor(40, 95);
-    char countdown[32];
-    snprintf(countdown, sizeof(countdown), "Shutdown: %us", seconds_remaining);
-    m_canvas->println(countdown);
-
-    // Footer
-    m_canvas->setTextColor(ST77XX_GREEN);
-    m_canvas->setTextSize(1);
-    m_canvas->setCursor(10, 120);
-    m_canvas->println("Connect USB to cancel");
-
-    // Push to display
-    m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
 }
 
 void ST7789Display::show_splash_screen(const char* version_string, const char* commit_sha,
@@ -482,80 +278,6 @@ void ST7789Display::show_splash_screen(const char* version_string, const char* c
     if (!m_initialized || m_tft == nullptr || m_framebuffer == nullptr) return;
     return; // TEMPORARILY DISABLED
 
-    // Render to canvas
-    m_canvas->fillScreen(ST77XX_BLACK);
-
-    // Title - Project Name
-    m_canvas->setTextColor(ST77XX_CYAN);
-    m_canvas->setTextSize(2);
-    m_canvas->setCursor(10, 8);
-    m_canvas->println("OpenPony");
-    m_canvas->setCursor(10, 28);
-    m_canvas->println("Logger");
-
-    // Version/Tag
-    m_canvas->setTextColor(ST77XX_GREEN);
-    m_canvas->setTextSize(1);
-    m_canvas->setCursor(5, 55);
-    m_canvas->print("Version: ");
-    m_canvas->setTextColor(ST77XX_YELLOW);
-    if (version_string != nullptr) {
-        // Extract just the tag (e.g., "v0.0.0" from full string)
-        const char* tag_start = strstr(version_string, "v");
-        if (tag_start) {
-            char tag[16];
-            sscanf(tag_start, "%15s", tag);
-            m_canvas->println(tag);
-        } else {
-            m_canvas->println(version_string);
-        }
-    }
-
-    // Commit SHA
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setCursor(5, 70);
-    m_canvas->print("Commit: ");
-    m_canvas->setTextColor(ST77XX_YELLOW);
-    if (commit_sha != nullptr) {
-        // Show first 7 characters of SHA
-        char short_sha[9];
-        snprintf(short_sha, sizeof(short_sha), "%.7s", commit_sha);
-        m_canvas->println(short_sha);
-    }
-
-    // Branch
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setCursor(5, 85);
-    m_canvas->print("Branch: ");
-    m_canvas->setTextColor(ST77XX_CYAN);
-    if (branch != nullptr) {
-        // Truncate long branch names
-        char short_branch[25];
-        snprintf(short_branch, sizeof(short_branch), "%.24s", branch);
-        m_canvas->println(short_branch);
-    }
-
-    // Build timestamp
-    m_canvas->setTextColor(ST77XX_WHITE);
-    m_canvas->setTextSize(1);
-    m_canvas->setCursor(5, 105);
-    m_canvas->print("Built: ");
-    m_canvas->setTextColor(ST77XX_GREEN);
-    if (build_time != nullptr) {
-        // Show truncated timestamp
-        char short_time[21];
-        snprintf(short_time, sizeof(short_time), "%.20s", build_time);
-        m_canvas->println(short_time);
-    }
-
-    // Footer - License
-    m_canvas->setTextColor(ST77XX_MAGENTA);
-    m_canvas->setTextSize(1);
-    m_canvas->setCursor(5, 125);
-    m_canvas->println("MIT License - Open Source");
-
-    // Push to display
-    m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
 }
 
 // ============================================================================
