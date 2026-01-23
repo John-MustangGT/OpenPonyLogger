@@ -12,62 +12,75 @@
 #define TFT_BACKLITE 45
 #define TFT_I2C_POWER 7
 
+// Display dimensions
+#define TFT_WIDTH  240
+#define TFT_HEIGHT 135
+
+// Static member initialization
+Adafruit_ST7789* ST7789Display::m_tft = nullptr;
+uint16_t* ST7789Display::m_framebuffer = nullptr;
+bool ST7789Display::m_initialized = false;
+DisplayMode ST7789Display::m_current_mode = DisplayMode::MAIN_SCREEN;
+
 // ============================================================================
-// PSRAMCanvas16 Implementation - PSRAM-only framebuffer
+// Framebuffer Helper Functions - Direct PSRAM buffer manipulation
 // ============================================================================
 
-PSRAMCanvas16::PSRAMCanvas16(uint16_t w, uint16_t h)
-    : Adafruit_GFX(w, h), m_buffer(nullptr), m_buffer_size(0) {
-    m_buffer_size = w * h * sizeof(uint16_t);
+void ST7789Display::fb_clear(uint16_t color) {
+    if (m_framebuffer == nullptr) return;
 
-    // Allocate buffer ONLY in PSRAM using heap_caps_malloc
-    m_buffer = (uint16_t*)heap_caps_malloc(m_buffer_size, MALLOC_CAP_SPIRAM);
-
-    if (m_buffer != nullptr) {
-        // Clear buffer to black
-        memset(m_buffer, 0, m_buffer_size);
-    } else {
-        Serial.printf("[PSRAMCanvas16] ERROR: Failed to allocate %u bytes in PSRAM!\n", m_buffer_size);
-    }
-}
-
-PSRAMCanvas16::~PSRAMCanvas16() {
-    if (m_buffer != nullptr) {
-        heap_caps_free(m_buffer);
-        m_buffer = nullptr;
-    }
-}
-
-void PSRAMCanvas16::drawPixel(int16_t x, int16_t y, uint16_t color) {
-    if (m_buffer == nullptr || x < 0 || y < 0 || x >= _width || y >= _height) {
-        return;
-    }
-    m_buffer[y * _width + x] = color;
-}
-
-void PSRAMCanvas16::fillScreen(uint16_t color) {
-    if (m_buffer == nullptr) {
-        return;
-    }
-
-    // Fast fill using memset for black (0x0000) or white (0xFFFF)
     if (color == 0x0000) {
-        memset(m_buffer, 0, m_buffer_size);
-    } else if (color == 0xFFFF) {
-        memset(m_buffer, 0xFF, m_buffer_size);
+        memset(m_framebuffer, 0, TFT_WIDTH * TFT_HEIGHT * sizeof(uint16_t));
     } else {
-        // General case: fill with specific color
-        for (size_t i = 0; i < (_width * _height); i++) {
-            m_buffer[i] = color;
+        for (int i = 0; i < TFT_WIDTH * TFT_HEIGHT; i++) {
+            m_framebuffer[i] = color;
         }
     }
 }
 
-// Static member initialization
-Adafruit_ST7789* ST7789Display::m_tft = nullptr;
-PSRAMCanvas16* ST7789Display::m_canvas = nullptr;
-bool ST7789Display::m_initialized = false;
-DisplayMode ST7789Display::m_current_mode = DisplayMode::MAIN_SCREEN;
+void ST7789Display::fb_setPixel(int16_t x, int16_t y, uint16_t color) {
+    if (m_framebuffer == nullptr || x < 0 || y < 0 || x >= TFT_WIDTH || y >= TFT_HEIGHT) return;
+    m_framebuffer[y * TFT_WIDTH + x] = color;
+}
+
+void ST7789Display::fb_fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
+    if (m_framebuffer == nullptr) return;
+
+    for (int16_t j = 0; j < h; j++) {
+        for (int16_t i = 0; i < w; i++) {
+            int16_t px = x + i;
+            int16_t py = y + j;
+            if (px >= 0 && px < TFT_WIDTH && py >= 0 && py < TFT_HEIGHT) {
+                m_framebuffer[py * TFT_WIDTH + px] = color;
+            }
+        }
+    }
+}
+
+void ST7789Display::fb_drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
+    if (m_framebuffer == nullptr) return;
+
+    // Top and bottom
+    for (int16_t i = 0; i < w; i++) {
+        fb_setPixel(x + i, y, color);
+        fb_setPixel(x + i, y + h - 1, color);
+    }
+    // Left and right
+    for (int16_t j = 0; j < h; j++) {
+        fb_setPixel(x, y + j, color);
+        fb_setPixel(x + w - 1, y + j, color);
+    }
+}
+
+void ST7789Display::fb_drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint8_t size) {
+    // Use TFT's built-in font drawing directly to framebuffer
+    // This is a simplified version - for now, we'll use TFT draw directly instead of framebuffer
+}
+
+void ST7789Display::fb_print(int16_t x, int16_t y, const char* str, uint16_t color, uint8_t size) {
+    // For text, we'll render directly to TFT after framebuffer transfer
+    // This is a limitation of not having GFX canvas
+}
 
 bool ST7789Display::init() {
     if (m_initialized) {
@@ -133,21 +146,24 @@ bool ST7789Display::init() {
     delay(100);
     
     // Step 8: Allocate framebuffer EXCLUSIVELY in PSRAM for flicker-free rendering
-    Serial.println("[TFT] Allocating framebuffer (240x135x2 = 64,800 bytes) in PSRAM...");
-    size_t canvas_size = 240 * 135 * 2;  // 16-bit per pixel
+    Serial.println("[TFT] Allocating framebuffer (240x135x2 = 64,800 bytes) ONLY in PSRAM...");
+    size_t framebuffer_size = TFT_WIDTH * TFT_HEIGHT * sizeof(uint16_t);  // 64,800 bytes
 
     Serial.printf("[TFT] Free DRAM before: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
     Serial.printf("[TFT] Free PSRAM before: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
-    // Allocate PSRAMCanvas16 (uses heap_caps_malloc with MALLOC_CAP_SPIRAM - PSRAM only!)
-    m_canvas = new PSRAMCanvas16(240, 135);
-    if (m_canvas == nullptr || m_canvas->getBuffer() == nullptr) {
-        Serial.println("[TFT] ERROR: Failed to allocate PSRAM canvas framebuffer!");
+    // Allocate raw framebuffer in PSRAM ONLY (no heap allocator, no object wrapper)
+    m_framebuffer = (uint16_t*)heap_caps_malloc(framebuffer_size, MALLOC_CAP_SPIRAM);
+    if (m_framebuffer == nullptr) {
+        Serial.println("[TFT] ERROR: Failed to allocate framebuffer in PSRAM!");
         return false;
     }
 
-    Serial.printf("[TFT] Canvas allocated: %u bytes in PSRAM\n", canvas_size);
-    Serial.printf("[TFT] Free DRAM after: %u bytes (should be unchanged)\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    // Clear framebuffer
+    memset(m_framebuffer, 0, framebuffer_size);
+
+    Serial.printf("[TFT] Framebuffer allocated: %u bytes in PSRAM\n", framebuffer_size);
+    Serial.printf("[TFT] Free DRAM after: %u bytes (MUST be unchanged!)\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
     Serial.printf("[TFT] Free PSRAM after: %u bytes (should decrease by ~65KB)\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     // Step 9: Draw test pattern
@@ -193,7 +209,11 @@ void ST7789Display::update(uint32_t uptime_ms,
                           uint8_t gps_minute,
                           uint8_t gps_second,
                           float gps_speed) {
-    if (!m_initialized || m_tft == nullptr || m_canvas == nullptr) return;
+    if (!m_initialized || m_tft == nullptr || m_framebuffer == nullptr) return;
+
+    // TEMPORARILY DISABLED - need to reimplement rendering without GFXcanvas
+    // TODO: Rewrite rendering to use framebuffer directly or TFT functions
+    return;
 
     // ========== RENDER TO PSRAM CANVAS (NO SPI TRANSACTIONS) ==========
     // Clear canvas once (all rendering happens in RAM)
@@ -352,9 +372,8 @@ void ST7789Display::set_display_mode(DisplayMode mode) {
 
     if (mode == DisplayMode::DARK) {
         // Turn off display and backlight
-        if (m_canvas != nullptr) {
-            m_canvas->fillScreen(ST77XX_BLACK);
-            m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
+        if (m_tft != nullptr) {
+            m_tft->fillScreen(ST77XX_BLACK);
         }
         digitalWrite(TFT_BACKLITE, LOW);
     } else {
@@ -368,7 +387,8 @@ DisplayMode ST7789Display::get_display_mode() {
 }
 
 void ST7789Display::show_info_screen(const char* ip_address, const char* ble_name) {
-    if (!m_initialized || m_tft == nullptr || m_canvas == nullptr) return;
+    if (!m_initialized || m_tft == nullptr || m_framebuffer == nullptr) return;
+    return; // TEMPORARILY DISABLED
 
     // Render to canvas
     m_canvas->fillScreen(ST77XX_BLACK);
@@ -415,7 +435,8 @@ void ST7789Display::show_info_screen(const char* ip_address, const char* ble_nam
 }
 
 void ST7789Display::show_shutdown_screen(uint32_t seconds_remaining) {
-    if (!m_initialized || m_tft == nullptr || m_canvas == nullptr) return;
+    if (!m_initialized || m_tft == nullptr || m_framebuffer == nullptr) return;
+    return; // TEMPORARILY DISABLED
 
     // Render to canvas
     m_canvas->fillScreen(ST77XX_BLACK);
@@ -458,7 +479,8 @@ void ST7789Display::show_shutdown_screen(uint32_t seconds_remaining) {
 
 void ST7789Display::show_splash_screen(const char* version_string, const char* commit_sha,
                                       const char* branch, const char* build_time) {
-    if (!m_initialized || m_tft == nullptr || m_canvas == nullptr) return;
+    if (!m_initialized || m_tft == nullptr || m_framebuffer == nullptr) return;
+    return; // TEMPORARILY DISABLED
 
     // Render to canvas
     m_canvas->fillScreen(ST77XX_BLACK);
