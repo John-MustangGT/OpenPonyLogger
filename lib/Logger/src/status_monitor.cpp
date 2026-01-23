@@ -214,10 +214,15 @@ void StatusMonitor::task_loop() {
     uint32_t yield_count = 0;
 
     ESP_LOGI(TAG, "[StatusMonitor] Task loop started on Core 0");
-    
+
     while (m_running) {
         loop_count++;
         uint32_t now = millis();
+
+        // Debug heartbeat every 2 seconds
+        if (loop_count % 2000 == 0) {
+            ESP_LOGI(TAG, "[DEBUG] Heartbeat: loop_count=%u, uptime=%ums", loop_count, now);
+        }
         
         // ===== Handle D0 Button (Pause/Resume) =====
         int d0_state = digitalRead(BUTTON_D0);
@@ -562,10 +567,13 @@ void StatusMonitor::task_loop() {
         // Update display and serial monitor at 1Hz
         static uint32_t last_display_update = 0;
         if (m_rt_logger != nullptr && now - last_display_update >= 1000) {
+            ESP_LOGI(TAG, "[DEBUG] Starting 1Hz display update...");
+
             DisplayMode current_mode = ST7789Display::get_display_mode();
             bool is_paused = m_rt_logger->is_storage_paused();
-            
+
             if (current_mode == DisplayMode::MAIN_SCREEN) {
+                ESP_LOGI(TAG, "[DEBUG] Getting sensor data...");
                 // Get latest sensor data for display
                 gps_data_t gps = m_rt_logger->get_last_gps();
                 accel_data_t accel = m_rt_logger->get_last_accel();
@@ -575,7 +583,8 @@ void StatusMonitor::task_loop() {
                 uint32_t uptime_sec = now / 1000;
                 float sample_hz = sample_count > 0 && uptime_sec > 0 ? (float)sample_count / uptime_sec : 0.0f;
                 if (!isfinite(sample_hz) || sample_hz < 0.0f) sample_hz = 0.0f;
-                
+
+                ESP_LOGI(TAG, "[DEBUG] Calling ST7789Display::update()...");
                 uint32_t display_start = millis();
                 ST7789Display::update(
                     now,
@@ -589,7 +598,8 @@ void StatusMonitor::task_loop() {
                     gps.hour, gps.minute, gps.second,
                     gps.speed
                 );
-                
+                ESP_LOGI(TAG, "[DEBUG] Display update returned successfully");
+
                 if (DebugFlags::ENABLE_DISPLAY_TIMING) {
                     uint32_t display_elapsed = millis() - display_start;
                     if (display_elapsed > 10) {
@@ -597,6 +607,7 @@ void StatusMonitor::task_loop() {
                     }
                 }
             } else if (current_mode == DisplayMode::INFO_SCREEN) {
+                ESP_LOGI(TAG, "[DEBUG] Showing info screen...");
                 ST7789Display::show_info_screen("192.168.4.1", "OpenPonyLogger");
             }
             // DisplayMode::DARK - do nothing
@@ -604,6 +615,7 @@ void StatusMonitor::task_loop() {
             // Print 1Hz serial monitor update showing total samples, RTLogger Hz, and write count
             ESP_LOGI(TAG, "[Monitor] Samples: %u | RTLogger: %.1f Hz | Writes: %u",
                      sample_count, sample_hz, m_write_count);
+            ESP_LOGI(TAG, "[DEBUG] 1Hz update complete");
 
             last_display_update = now;
 
@@ -611,9 +623,11 @@ void StatusMonitor::task_loop() {
             vTaskDelay(pdMS_TO_TICKS(1));
         }
 
-        // Memory and CPU monitoring every 5 seconds
+        // Memory and task monitoring every 5 seconds
         static uint32_t last_memory_report = 0;
         if (now - last_memory_report >= 5000) {
+            ESP_LOGI(TAG, "[DEBUG] Starting 5s memory report...");
+
             // ========== MEMORY STATS ==========
             size_t free_dram = heap_caps_get_free_size(MALLOC_CAP_8BIT);
             size_t total_dram = heap_caps_get_total_size(MALLOC_CAP_8BIT);
@@ -635,6 +649,7 @@ void StatusMonitor::task_loop() {
                      task_count);
 
             last_memory_report = now;
+            ESP_LOGI(TAG, "[DEBUG] 5s memory report complete");
         }
 
         // Print status at regular intervals (rate-limited to reduce Core 0 serial overhead)
