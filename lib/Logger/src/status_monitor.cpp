@@ -229,9 +229,9 @@ void StatusMonitor::task_loop() {
         loop_count++;
         uint32_t now = millis();
 
-        // Debug heartbeat every 2 seconds
-        if (loop_count % 2000 == 0) {
-            ESP_LOGI(TAG, "[DEBUG] Heartbeat: loop_count=%u, uptime=%ums", loop_count, now);
+        // Debug heartbeat every 100 loops (~4 seconds at 25 loops/sec)
+        if (loop_count % 100 == 0) {
+            Serial.printf(">>> Heartbeat: loop=%u, uptime=%ums <<<\n", loop_count, now);
         }
         
         // ===== Handle D0 Button (Pause/Resume) =====
@@ -647,7 +647,7 @@ void StatusMonitor::task_loop() {
         // Memory and task monitoring every 5 seconds
         static uint32_t last_memory_report = 0;
         if (now - last_memory_report >= 5000) {
-            ESP_LOGI(TAG, "[DEBUG] Starting 5s memory report...");
+            Serial.printf(">>> Memory report at %ums <<<\n", now);
 
             // ========== MEMORY STATS ==========
             size_t free_dram = heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -659,18 +659,16 @@ void StatusMonitor::task_loop() {
             uint8_t psram_used_pct = (total_psram > 0) ? (uint8_t)(((total_psram - free_psram) * 100) / total_psram) : 0;
 
             // ========== TASK STATS ==========
-            // Get task count as system activity indicator
-            // Note: Per-core CPU stats require ESP-IDF trace facility (not available in Arduino framework by default)
             UBaseType_t task_count = uxTaskGetNumberOfTasks();
 
             // Print memory + task stats
-            ESP_LOGI(TAG, "[System] DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%) | Tasks: %u",
-                     (total_dram - free_dram) / 1024, total_dram / 1024, dram_used_pct,
-                     (total_psram - free_psram) / 1024, total_psram / 1024, psram_used_pct,
-                     task_count);
+            Serial.printf(">>> [System] DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%) | Tasks: %u <<<\n",
+                         (total_dram - free_dram) / 1024, total_dram / 1024, dram_used_pct,
+                         (total_psram - free_psram) / 1024, total_psram / 1024, psram_used_pct,
+                         task_count);
 
             last_memory_report = now;
-            ESP_LOGI(TAG, "[DEBUG] 5s memory report complete");
+            Serial.println(">>> Memory report complete <<<");
         }
 
         // Print status at regular intervals (rate-limited to reduce Core 0 serial overhead)
