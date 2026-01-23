@@ -181,6 +181,7 @@ bool ST7789Display::init() {
         Serial.println("[TFT] ✗ Location: DRAM (internal) - WRONG! Should be PSRAM!");
     } else {
         Serial.println("[TFT] ? Location: Unknown memory region");
+    }
 
     // Clear framebuffer
     memset(m_framebuffer, 0, framebuffer_size);
