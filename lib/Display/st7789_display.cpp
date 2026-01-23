@@ -16,8 +16,13 @@
 #define TFT_WIDTH  240
 #define TFT_HEIGHT 135
 
+// Define EXT_RAM_ATTR if not already defined (forces variables into PSRAM)
+#ifndef EXT_RAM_ATTR
+#define EXT_RAM_ATTR __attribute__((section(".ext_ram.bss")))
+#endif
+
 // Static PSRAM framebuffer - 240x135x2 = 64,800 bytes
-// Using EXT_RAM_ATTR forces this into PSRAM, bypassing heap allocator
+// Using linker section attribute to force this into PSRAM external RAM
 static EXT_RAM_ATTR uint16_t s_framebuffer[TFT_WIDTH * TFT_HEIGHT];
 
 // Static member initialization
@@ -162,10 +167,20 @@ bool ST7789Display::init() {
     // Point to static PSRAM buffer (no heap allocation!)
     m_framebuffer = s_framebuffer;
 
-    // Verify pointer is in PSRAM address range (ESP32-S3 PSRAM starts at 0x3C000000)
-    Serial.printf("[TFT] Framebuffer pointer: 0x%08X\n", (uint32_t)m_framebuffer);
-    Serial.printf("[TFT] Is in PSRAM range? %s\n",
-                 ((uint32_t)m_framebuffer >= 0x3C000000) ? "YES" : "NO - ERROR!");
+    // Verify pointer is in PSRAM address range
+    // ESP32-S3 PSRAM: 0x3C000000-0x3E000000 (external PSRAM)
+    // ESP32-S3 DRAM: 0x3FC00000-0x3FD00000 (internal RAM)
+    uint32_t ptr_addr = (uint32_t)m_framebuffer;
+    bool is_psram = (ptr_addr >= 0x3C000000 && ptr_addr < 0x3E000000);
+    bool is_dram = (ptr_addr >= 0x3FC00000 && ptr_addr < 0x3FD00000);
+
+    Serial.printf("[TFT] Framebuffer pointer: 0x%08X\n", ptr_addr);
+    if (is_psram) {
+        Serial.println("[TFT] ✓ Location: PSRAM (external) - CORRECT!");
+    } else if (is_dram) {
+        Serial.println("[TFT] ✗ Location: DRAM (internal) - WRONG! Should be PSRAM!");
+    } else {
+        Serial.println("[TFT] ? Location: Unknown memory region");
 
     // Clear framebuffer
     memset(m_framebuffer, 0, framebuffer_size);
