@@ -159,12 +159,21 @@ bool ST7789Display::init() {
         return false;
     }
 
+    // Verify pointer is in PSRAM address range (ESP32-S3 PSRAM starts at 0x3C000000)
+    Serial.printf("[TFT] Framebuffer pointer: 0x%08X\n", (uint32_t)m_framebuffer);
+    Serial.printf("[TFT] Is in PSRAM range? %s\n",
+                 ((uint32_t)m_framebuffer >= 0x3C000000) ? "YES" : "NO - ERROR!");
+
     // Clear framebuffer
     memset(m_framebuffer, 0, framebuffer_size);
 
-    Serial.printf("[TFT] Framebuffer allocated: %u bytes in PSRAM\n", framebuffer_size);
-    Serial.printf("[TFT] Free DRAM after: %u bytes (MUST be unchanged!)\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
-    Serial.printf("[TFT] Free PSRAM after: %u bytes (should decrease by ~65KB)\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    Serial.printf("[TFT] Framebuffer allocated: %u bytes\n", framebuffer_size);
+    Serial.printf("[TFT] Free DRAM after: %u bytes (change: %d bytes)\n",
+                 heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                 (int)heap_caps_get_free_size(MALLOC_CAP_8BIT) - 2378563);
+    Serial.printf("[TFT] Free PSRAM after: %u bytes (change: %d bytes)\n",
+                 heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                 (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) - 2095103);
 
     // Step 9: Draw test pattern
     Serial.println("[TFT] Drawing initialization message...");
