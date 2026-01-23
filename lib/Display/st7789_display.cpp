@@ -3,6 +3,7 @@
 #include "../../../lib/Logger/include/units_helper.h"
 #include <SPI.h>
 #include <cstdio>
+#include <esp_heap_caps.h>
 
 // ST7789 pins for Adafruit ESP32-S3 Feather Reverse TFT
 #define TFT_CS    42
@@ -13,6 +14,7 @@
 
 // Static member initialization
 Adafruit_ST7789* ST7789Display::m_tft = nullptr;
+GFXcanvas16* ST7789Display::m_canvas = nullptr;
 bool ST7789Display::m_initialized = false;
 DisplayMode ST7789Display::m_current_mode = DisplayMode::MAIN_SCREEN;
 
@@ -79,7 +81,21 @@ bool ST7789Display::init() {
     digitalWrite(TFT_BACKLITE, HIGH);
     delay(100);
     
-    // Step 8: Draw test pattern
+    // Step 8: Allocate PSRAM framebuffer for flicker-free rendering
+    Serial.println("[TFT] Allocating PSRAM framebuffer (240x135x2 = 64,800 bytes)...");
+    m_canvas = new GFXcanvas16(240, 135);
+
+    if (m_canvas == nullptr) {
+        Serial.println("[TFT] ERROR: Failed to allocate canvas framebuffer!");
+        return false;
+    }
+
+    // Verify PSRAM allocation
+    size_t canvas_size = 240 * 135 * 2;  // 16-bit per pixel
+    Serial.printf("[TFT] Canvas allocated: %u bytes\n", canvas_size);
+    Serial.printf("[TFT] Free PSRAM: %u bytes\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+    // Step 9: Draw test pattern
     Serial.println("[TFT] Drawing initialization message...");
     m_tft->setTextColor(ST77XX_WHITE);
     m_tft->setTextSize(1);
@@ -88,7 +104,7 @@ bool ST7789Display::init() {
     m_tft->setCursor(5, 25);
     m_tft->println("Sensors loading...");
     delay(500);
-    
+
     m_initialized = true;
     Serial.println("[TFT] Display initialization complete!");
     return true;
@@ -122,79 +138,87 @@ void ST7789Display::update(uint32_t uptime_ms,
                           uint8_t gps_minute,
                           uint8_t gps_second,
                           float gps_speed) {
-    if (!m_initialized || m_tft == nullptr) return;
-    
-    // Clear screen to dark background
-    m_tft->fillScreen(ST77XX_BLACK);
-    delayMicroseconds(100);  // Small delay to ensure display processes the clear
-    
-    // Pre-clear all text rows to prevent ghosting
-    m_tft->fillRect(0, 0, 240, 22, ST77XX_BLACK);     // Row 1 (time/samples)
-    m_tft->fillRect(0, 25, 240, 20, ST77XX_BLACK);    // Row 2 (accel)
-    m_tft->fillRect(0, 45, 240, 20, ST77XX_BLACK);    // Row 3 (gyro)
-    m_tft->fillRect(0, 65, 240, 22, ST77XX_BLACK);    // Row 4 (GPS coords)
-    m_tft->fillRect(0, 85, 240, 20, ST77XX_BLACK);    // Row 5 (speed)
-    
+    if (!m_initialized || m_tft == nullptr || m_canvas == nullptr) return;
+
+    // ========== RENDER TO PSRAM CANVAS (NO SPI TRANSACTIONS) ==========
+    // Clear canvas once (all rendering happens in RAM)
+    m_canvas->fillScreen(ST77XX_BLACK);
+
     // Calculate uptime
     uint32_t uptime_sec = uptime_ms / 1000;
     uint32_t hours = uptime_sec / 3600;
     uint32_t minutes = (uptime_sec / 60) % 60;
     uint32_t seconds = uptime_sec % 60;
-    
+
     // ========== ROW 1: TIME & SAMPLE COUNT ==========
     char timestr[16];
     snprintf(timestr, sizeof(timestr), "%u:%02u:%02u", hours, minutes, seconds);
-    DisplayLabel::draw(m_tft, timestr, 2, 2, ST77XX_CYAN, ST77XX_BLACK, 2);
-    
+    m_canvas->setTextSize(2);
+    m_canvas->setTextColor(ST77XX_CYAN);
+    m_canvas->setCursor(2, 2);
+    m_canvas->print(timestr);
+
     // Sample count on right side with logging state symbol
     char sampstr[32];
     if (sample_count >= 1000000) {
-        snprintf(sampstr, sizeof(sampstr), "%.1fM%s", sample_count / 1000000.0f, is_paused ? "⏸" : "●");
+        snprintf(sampstr, sizeof(sampstr), "%.1fM%s", sample_count / 1000000.0f, is_paused ? "P" : "*");
     } else if (sample_count >= 1000) {
-        snprintf(sampstr, sizeof(sampstr), "%.1fK%s", sample_count / 1000.0f, is_paused ? "⏸" : "●");
+        snprintf(sampstr, sizeof(sampstr), "%.1fK%s", sample_count / 1000.0f, is_paused ? "P" : "*");
     } else {
-        snprintf(sampstr, sizeof(sampstr), "%u%s", sample_count, is_paused ? "⏸" : "●");
+        snprintf(sampstr, sizeof(sampstr), "%u%s", sample_count, is_paused ? "P" : "*");
     }
-    DisplayLabel::draw(m_tft, sampstr, 140, 5, ST77XX_YELLOW, ST77XX_BLACK, 2);
-    
-    // ========== ROW 2: ACCELEROMETER DATA (LARGER) ==========
+    m_canvas->setTextColor(ST77XX_YELLOW);
+    m_canvas->setCursor(140, 5);
+    m_canvas->print(sampstr);
+
+    // ========== ROW 2: ACCELEROMETER DATA ==========
     char accel_line[40];
     snprintf(accel_line, sizeof(accel_line), "A:%+.2f %+.2f %+.2f", accel_x, accel_y, accel_z);
-    DisplayLabel::draw(m_tft, accel_line, 2, 28, ST77XX_WHITE, ST77XX_BLACK, 2);
-    
-    // ========== ROW 3: GYROSCOPE DATA (LARGER) ==========
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setCursor(2, 28);
+    m_canvas->print(accel_line);
+
+    // ========== ROW 3: GYROSCOPE DATA ==========
     char gyro_line[40];
     snprintf(gyro_line, sizeof(gyro_line), "G:%+.1f %+.1f %+.1f", gyro_x, gyro_y, gyro_z);
-    DisplayLabel::draw(m_tft, gyro_line, 2, 48, ST77XX_WHITE, ST77XX_BLACK, 2);
-    
-    // ========== ROW 4: GPS COORDINATES (LATITUDE LONGITUDE ALTITUDE) ==========
+    m_canvas->setCursor(2, 48);
+    m_canvas->print(gyro_line);
+
+    // ========== ROW 4: GPS COORDINATES ==========
     if (gps_valid) {
         char gps_line[40];
-        snprintf(gps_line, sizeof(gps_line), "%+6.1f %+7.1f %5.0fm", 
+        snprintf(gps_line, sizeof(gps_line), "%+6.1f %+7.1f %5.0fm",
                  gps_latitude, gps_longitude, gps_altitude);
-        DisplayLabel::draw(m_tft, gps_line, 2, 68, ST77XX_GREEN, ST77XX_BLACK, 2);
+        m_canvas->setTextColor(ST77XX_GREEN);
+        m_canvas->setCursor(2, 68);
+        m_canvas->print(gps_line);
     } else {
-        DisplayLabel::draw(m_tft, "No GPS Fix", 2, 68, ST77XX_RED, ST77XX_BLACK, 2);
+        m_canvas->setTextColor(ST77XX_RED);
+        m_canvas->setCursor(2, 68);
+        m_canvas->print("No GPS Fix");
     }
-    
-    // ========== ROW 5: GPS SPEED STATUS ==========
+
+    // ========== ROW 5: GPS SPEED ==========
     if (gps_valid) {
         float display_speed = convert_speed(gps_speed);
         char gps_str[32];
         snprintf(gps_str, sizeof(gps_str), "Spd:%.1f%s", display_speed, get_speed_unit());
-        DisplayLabel::draw(m_tft, gps_str, 2, 88, ST77XX_GREEN, ST77XX_BLACK, 2);
+        m_canvas->setTextColor(ST77XX_GREEN);
+        m_canvas->setCursor(2, 88);
+        m_canvas->print(gps_str);
     } else {
-        DisplayLabel::draw(m_tft, "GPS Waiting", 2, 88, ST77XX_YELLOW, ST77XX_BLACK, 2);
+        m_canvas->setTextColor(ST77XX_YELLOW);
+        m_canvas->setCursor(2, 88);
+        m_canvas->print("GPS Waiting");
     }
-    
-    // ========== BOTTOM: GPS TIME & BATTERY INDICATOR ==========
-    m_tft->setTextSize(1);
-    m_tft->setTextColor(ST77XX_WHITE);
-    
+
+    // ========== BOTTOM: GPS TIME & BATTERY ==========
+    m_canvas->setTextSize(1);
+
     uint16_t bar_height = 6;
-    uint16_t bar_y = m_tft->height() - bar_height - 4;
-    uint16_t bar_width = 40;  // Fixed small width (5 chars wide-ish)
-    
+    uint16_t bar_y = 135 - bar_height - 4;  // Hard-coded height
+    uint16_t bar_width = 40;
+
     // Battery bar color
     uint16_t bar_color = ST77XX_GREEN;
     if (battery_soc < 20) {
@@ -202,33 +226,32 @@ void ST7789Display::update(uint32_t uptime_ms,
     } else if (battery_soc < 50) {
         bar_color = ST77XX_ORANGE;
     }
-    
-    // Calculate filled portion
+
+    // Draw battery bar
     uint16_t filled_width = (uint16_t)(battery_soc / 100.0f * bar_width);
-    
-    // Draw filled portion
-    m_tft->fillRect(2, bar_y, filled_width, bar_height, bar_color);
-    
-    // Draw border
-    m_tft->drawRect(2, bar_y, bar_width, bar_height, ST77XX_WHITE);
-    
-    // Display percentage next to bar
+    m_canvas->fillRect(2, bar_y, filled_width, bar_height, bar_color);
+    m_canvas->drawRect(2, bar_y, bar_width, bar_height, ST77XX_WHITE);
+
+    // Battery percentage
     char pct_str[16];
     snprintf(pct_str, sizeof(pct_str), "%.0f%%", battery_soc);
-    DisplayLabel::draw(m_tft, pct_str, 45, bar_y + 1, ST77XX_WHITE, ST77XX_BLACK, 1);
-    
-    // Display GPS time on the right side (if valid)
-    if (gps_valid) {
-        // Build time string
-        String time_str = String(gps_hour < 10 ? "0" : "") + String(gps_hour) + ":" +
-                         String(gps_minute < 10 ? "0" : "") + String(gps_minute) + ":" +
-                         String(gps_second < 10 ? "0" : "") + String(gps_second);
-        DisplayLabel::draw(m_tft, time_str.c_str(), 75, bar_y + 1, ST77XX_CYAN, ST77XX_BLACK, 1);
-    } else {
-        DisplayLabel::draw(m_tft, "--:--:--", 75, bar_y + 1, ST77XX_YELLOW, ST77XX_BLACK, 1);
-    }
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setCursor(45, bar_y + 1);
+    m_canvas->print(pct_str);
 
-    // Sampling Hz on far right (clamped to avoid NaN/inf)
+    // GPS time (no String allocations!)
+    char time_str[12];
+    if (gps_valid) {
+        snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u", gps_hour, gps_minute, gps_second);
+        m_canvas->setTextColor(ST77XX_CYAN);
+    } else {
+        snprintf(time_str, sizeof(time_str), "--:--:--");
+        m_canvas->setTextColor(ST77XX_YELLOW);
+    }
+    m_canvas->setCursor(75, bar_y + 1);
+    m_canvas->print(time_str);
+
+    // Sampling Hz (clamped)
     if (!isfinite(sample_hz) || sample_hz < 0.0f) {
         sample_hz = 0.0f;
     } else if (sample_hz > 999.9f) {
@@ -236,7 +259,13 @@ void ST7789Display::update(uint32_t uptime_ms,
     }
     char hz_str[12];
     snprintf(hz_str, sizeof(hz_str), "%.1fHz", sample_hz);
-    DisplayLabel::draw(m_tft, hz_str, 160, bar_y + 1, ST77XX_WHITE, ST77XX_BLACK, 1);
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setCursor(160, bar_y + 1);
+    m_canvas->print(hz_str);
+
+    // ========== SINGLE SPI TRANSFER: PUSH CANVAS TO DISPLAY ==========
+    // This is the ONLY SPI transaction - all rendering happened in PSRAM
+    m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
 }
 
 void ST7789Display::cycle_display_mode() {
@@ -265,10 +294,13 @@ void ST7789Display::cycle_display_mode() {
 
 void ST7789Display::set_display_mode(DisplayMode mode) {
     m_current_mode = mode;
-    
+
     if (mode == DisplayMode::DARK) {
         // Turn off display and backlight
-        m_tft->fillScreen(ST77XX_BLACK);
+        if (m_canvas != nullptr) {
+            m_canvas->fillScreen(ST77XX_BLACK);
+            m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
+        }
         digitalWrite(TFT_BACKLITE, LOW);
     } else {
         // Make sure backlight is on
@@ -281,163 +313,172 @@ DisplayMode ST7789Display::get_display_mode() {
 }
 
 void ST7789Display::show_info_screen(const char* ip_address, const char* ble_name) {
-    if (!m_initialized || m_tft == nullptr) return;
-    
-    // Clear screen
-    m_tft->fillScreen(ST77XX_BLACK);
-    
+    if (!m_initialized || m_tft == nullptr || m_canvas == nullptr) return;
+
+    // Render to canvas
+    m_canvas->fillScreen(ST77XX_BLACK);
+
     // Title
-    m_tft->setTextColor(ST77XX_CYAN);
-    m_tft->setTextSize(2);
-    m_tft->setCursor(5, 5);
-    m_tft->println("NETWORK INFO");
-    
+    m_canvas->setTextColor(ST77XX_CYAN);
+    m_canvas->setTextSize(2);
+    m_canvas->setCursor(5, 5);
+    m_canvas->println("NETWORK INFO");
+
     // IP Address
-    m_tft->setTextColor(ST77XX_WHITE);
-    m_tft->setTextSize(1);
-    m_tft->setCursor(5, 30);
-    m_tft->println("IP Address:");
-    m_tft->setTextColor(ST77XX_YELLOW);
-    m_tft->setCursor(5, 40);
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setTextSize(1);
+    m_canvas->setCursor(5, 30);
+    m_canvas->println("IP Address:");
+    m_canvas->setTextColor(ST77XX_YELLOW);
+    m_canvas->setCursor(5, 40);
     if (ip_address != nullptr && ip_address[0] != '\0') {
-        m_tft->println(ip_address);
+        m_canvas->println(ip_address);
     } else {
-        m_tft->println("Not available");
+        m_canvas->println("Not available");
     }
-    
+
     // BLE Name
-    m_tft->setTextColor(ST77XX_WHITE);
-    m_tft->setCursor(5, 60);
-    m_tft->println("BLE Device:");
-    m_tft->setTextColor(ST77XX_GREEN);
-    m_tft->setCursor(5, 70);
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setCursor(5, 60);
+    m_canvas->println("BLE Device:");
+    m_canvas->setTextColor(ST77XX_GREEN);
+    m_canvas->setCursor(5, 70);
     if (ble_name != nullptr && ble_name[0] != '\0') {
-        m_tft->println(ble_name);
+        m_canvas->println(ble_name);
     } else {
-        m_tft->println("Not configured");
+        m_canvas->println("Not configured");
     }
-    
+
     // Footer
-    m_tft->setTextColor(ST77XX_WHITE);
-    m_tft->setTextSize(1);
-    m_tft->setCursor(5, 120);
-    m_tft->println("Press D1 to cycle");
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setTextSize(1);
+    m_canvas->setCursor(5, 120);
+    m_canvas->println("Press D1 to cycle");
+
+    // Push to display
+    m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
 }
 
 void ST7789Display::show_shutdown_screen(uint32_t seconds_remaining) {
-    if (!m_initialized || m_tft == nullptr) return;
-    
-    // Clear screen
-    m_tft->fillScreen(ST77XX_BLACK);
-    
+    if (!m_initialized || m_tft == nullptr || m_canvas == nullptr) return;
+
+    // Render to canvas
+    m_canvas->fillScreen(ST77XX_BLACK);
+
     // Title
-    m_tft->setTextColor(ST77XX_MAGENTA);
-    m_tft->setTextSize(2);
-    m_tft->setCursor(20, 10);
-    m_tft->println("POWER LOSS");
-    
+    m_canvas->setTextColor(ST77XX_MAGENTA);
+    m_canvas->setTextSize(2);
+    m_canvas->setCursor(20, 10);
+    m_canvas->println("POWER LOSS");
+
     // Warning icon (simple exclamation)
-    m_tft->setTextColor(ST77XX_YELLOW);
-    m_tft->setTextSize(4);
-    m_tft->setCursor(100, 35);
-    m_tft->println("!");
-    
+    m_canvas->setTextColor(ST77XX_YELLOW);
+    m_canvas->setTextSize(4);
+    m_canvas->setCursor(100, 35);
+    m_canvas->println("!");
+
     // Shutdown message
-    m_tft->setTextColor(ST77XX_WHITE);
-    m_tft->setTextSize(1);
-    m_tft->setCursor(15, 75);
-    m_tft->println("USB power disconnected");
-    
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setTextSize(1);
+    m_canvas->setCursor(15, 75);
+    m_canvas->println("USB power disconnected");
+
     // Countdown
-    m_tft->setTextColor(ST77XX_CYAN);
-    m_tft->setTextSize(2);
-    m_tft->setCursor(40, 95);
+    m_canvas->setTextColor(ST77XX_CYAN);
+    m_canvas->setTextSize(2);
+    m_canvas->setCursor(40, 95);
     char countdown[32];
     snprintf(countdown, sizeof(countdown), "Shutdown: %us", seconds_remaining);
-    m_tft->println(countdown);
-    
+    m_canvas->println(countdown);
+
     // Footer
-    m_tft->setTextColor(ST77XX_GREEN);
-    m_tft->setTextSize(1);
-    m_tft->setCursor(10, 120);
-    m_tft->println("Connect USB to cancel");
+    m_canvas->setTextColor(ST77XX_GREEN);
+    m_canvas->setTextSize(1);
+    m_canvas->setCursor(10, 120);
+    m_canvas->println("Connect USB to cancel");
+
+    // Push to display
+    m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
 }
 
 void ST7789Display::show_splash_screen(const char* version_string, const char* commit_sha,
                                       const char* branch, const char* build_time) {
-    if (!m_initialized || m_tft == nullptr) return;
+    if (!m_initialized || m_tft == nullptr || m_canvas == nullptr) return;
 
-    // Clear screen with dark background
-    m_tft->fillScreen(ST77XX_BLACK);
+    // Render to canvas
+    m_canvas->fillScreen(ST77XX_BLACK);
 
     // Title - Project Name
-    m_tft->setTextColor(ST77XX_CYAN);
-    m_tft->setTextSize(2);
-    m_tft->setCursor(10, 8);
-    m_tft->println("OpenPony");
-    m_tft->setCursor(10, 28);
-    m_tft->println("Logger");
+    m_canvas->setTextColor(ST77XX_CYAN);
+    m_canvas->setTextSize(2);
+    m_canvas->setCursor(10, 8);
+    m_canvas->println("OpenPony");
+    m_canvas->setCursor(10, 28);
+    m_canvas->println("Logger");
 
     // Version/Tag
-    m_tft->setTextColor(ST77XX_GREEN);
-    m_tft->setTextSize(1);
-    m_tft->setCursor(5, 55);
-    m_tft->print("Version: ");
-    m_tft->setTextColor(ST77XX_YELLOW);
+    m_canvas->setTextColor(ST77XX_GREEN);
+    m_canvas->setTextSize(1);
+    m_canvas->setCursor(5, 55);
+    m_canvas->print("Version: ");
+    m_canvas->setTextColor(ST77XX_YELLOW);
     if (version_string != nullptr) {
         // Extract just the tag (e.g., "v0.0.0" from full string)
         const char* tag_start = strstr(version_string, "v");
         if (tag_start) {
             char tag[16];
             sscanf(tag_start, "%15s", tag);
-            m_tft->println(tag);
+            m_canvas->println(tag);
         } else {
-            m_tft->println(version_string);
+            m_canvas->println(version_string);
         }
     }
 
     // Commit SHA
-    m_tft->setTextColor(ST77XX_WHITE);
-    m_tft->setCursor(5, 70);
-    m_tft->print("Commit: ");
-    m_tft->setTextColor(ST77XX_YELLOW);
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setCursor(5, 70);
+    m_canvas->print("Commit: ");
+    m_canvas->setTextColor(ST77XX_YELLOW);
     if (commit_sha != nullptr) {
         // Show first 7 characters of SHA
         char short_sha[9];
         snprintf(short_sha, sizeof(short_sha), "%.7s", commit_sha);
-        m_tft->println(short_sha);
+        m_canvas->println(short_sha);
     }
 
     // Branch
-    m_tft->setTextColor(ST77XX_WHITE);
-    m_tft->setCursor(5, 85);
-    m_tft->print("Branch: ");
-    m_tft->setTextColor(ST77XX_CYAN);
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setCursor(5, 85);
+    m_canvas->print("Branch: ");
+    m_canvas->setTextColor(ST77XX_CYAN);
     if (branch != nullptr) {
         // Truncate long branch names
         char short_branch[25];
         snprintf(short_branch, sizeof(short_branch), "%.24s", branch);
-        m_tft->println(short_branch);
+        m_canvas->println(short_branch);
     }
 
     // Build timestamp
-    m_tft->setTextColor(ST77XX_WHITE);
-    m_tft->setTextSize(1);
-    m_tft->setCursor(5, 105);
-    m_tft->print("Built: ");
-    m_tft->setTextColor(ST77XX_GREEN);
+    m_canvas->setTextColor(ST77XX_WHITE);
+    m_canvas->setTextSize(1);
+    m_canvas->setCursor(5, 105);
+    m_canvas->print("Built: ");
+    m_canvas->setTextColor(ST77XX_GREEN);
     if (build_time != nullptr) {
         // Show truncated timestamp
         char short_time[21];
         snprintf(short_time, sizeof(short_time), "%.20s", build_time);
-        m_tft->println(short_time);
+        m_canvas->println(short_time);
     }
 
     // Footer - License
-    m_tft->setTextColor(ST77XX_MAGENTA);
-    m_tft->setTextSize(1);
-    m_tft->setCursor(5, 125);
-    m_tft->println("MIT License - Open Source");
+    m_canvas->setTextColor(ST77XX_MAGENTA);
+    m_canvas->setTextSize(1);
+    m_canvas->setCursor(5, 125);
+    m_canvas->println("MIT License - Open Source");
+
+    // Push to display
+    m_tft->drawRGBBitmap(0, 0, m_canvas->getBuffer(), 240, 135);
 }
 
 // ============================================================================

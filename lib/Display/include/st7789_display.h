@@ -131,6 +131,7 @@ public:
 
 private:
     static Adafruit_ST7789* m_tft;
+    static GFXcanvas16* m_canvas;  // PSRAM framebuffer for flicker-free rendering
     static bool m_initialized;
     static DisplayMode m_current_mode;
 };
