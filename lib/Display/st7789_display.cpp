@@ -238,13 +238,111 @@ void ST7789Display::update(uint32_t uptime_ms,
                           uint8_t gps_minute,
                           uint8_t gps_second,
                           float gps_speed) {
-    // TEMPORARILY DISABLED - need to reimplement rendering without GFXcanvas
-    // TODO: Rewrite rendering to use framebuffer directly or TFT functions
-    (void)uptime_ms; (void)temp; (void)accel_x; (void)accel_y; (void)accel_z;
-    (void)gyro_x; (void)gyro_y; (void)gyro_z; (void)battery_soc; (void)battery_voltage;
-    (void)gps_valid; (void)sample_count; (void)sample_hz; (void)is_paused;
-    (void)gps_latitude; (void)gps_longitude; (void)gps_altitude;
-    (void)gps_hour; (void)gps_minute; (void)gps_second; (void)gps_speed;
+    if (!m_initialized || m_tft == nullptr) return;
+
+    // Direct TFT rendering (simple approach, may have some flicker)
+    // Clear screen
+    m_tft->fillScreen(ST77XX_BLACK);
+
+    // Calculate uptime
+    uint32_t uptime_sec = uptime_ms / 1000;
+    uint32_t hours = uptime_sec / 3600;
+    uint32_t minutes = (uptime_sec / 60) % 60;
+    uint32_t seconds = uptime_sec % 60;
+
+    // ROW 1: TIME & SAMPLE COUNT
+    char timestr[16];
+    snprintf(timestr, sizeof(timestr), "%u:%02u:%02u", hours, minutes, seconds);
+    m_tft->setTextSize(2);
+    m_tft->setTextColor(ST77XX_CYAN);
+    m_tft->setCursor(2, 2);
+    m_tft->print(timestr);
+
+    // Sample count with logging indicator
+    char sampstr[32];
+    if (sample_count >= 1000000) {
+        snprintf(sampstr, sizeof(sampstr), "%.1fM%s", sample_count / 1000000.0f, is_paused ? "P" : "*");
+    } else if (sample_count >= 1000) {
+        snprintf(sampstr, sizeof(sampstr), "%.1fK%s", sample_count / 1000.0f, is_paused ? "P" : "*");
+    } else {
+        snprintf(sampstr, sizeof(sampstr), "%u%s", sample_count, is_paused ? "P" : "*");
+    }
+    m_tft->setTextColor(ST77XX_YELLOW);
+    m_tft->setCursor(140, 5);
+    m_tft->print(sampstr);
+
+    // ROW 2: ACCELEROMETER
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(2, 28);
+    m_tft->printf("A:%+.2f %+.2f %+.2f", accel_x, accel_y, accel_z);
+
+    // ROW 3: GYROSCOPE
+    m_tft->setCursor(2, 48);
+    m_tft->printf("G:%+.1f %+.1f %+.1f", gyro_x, gyro_y, gyro_z);
+
+    // ROW 4: GPS COORDINATES
+    m_tft->setCursor(2, 68);
+    if (gps_valid) {
+        m_tft->setTextColor(ST77XX_GREEN);
+        m_tft->printf("%+6.1f %+7.1f %5.0fm", gps_latitude, gps_longitude, gps_altitude);
+    } else {
+        m_tft->setTextColor(ST77XX_RED);
+        m_tft->print("No GPS Fix");
+    }
+
+    // ROW 5: GPS SPEED
+    m_tft->setCursor(2, 88);
+    if (gps_valid) {
+        float display_speed = convert_speed(gps_speed);
+        m_tft->setTextColor(ST77XX_GREEN);
+        m_tft->printf("Spd:%.1f%s", display_speed, get_speed_unit());
+    } else {
+        m_tft->setTextColor(ST77XX_YELLOW);
+        m_tft->print("GPS Waiting");
+    }
+
+    // BOTTOM: GPS TIME & BATTERY
+    uint16_t bar_height = 6;
+    uint16_t bar_y = 135 - bar_height - 4;
+    uint16_t bar_width = 40;
+
+    // Battery bar
+    uint16_t bar_color = ST77XX_GREEN;
+    if (battery_soc < 20) {
+        bar_color = ST77XX_RED;
+    } else if (battery_soc < 50) {
+        bar_color = ST77XX_ORANGE;
+    }
+
+    uint16_t filled_width = (uint16_t)(battery_soc / 100.0f * bar_width);
+    m_tft->fillRect(2, bar_y, filled_width, bar_height, bar_color);
+    m_tft->drawRect(2, bar_y, bar_width, bar_height, ST77XX_WHITE);
+
+    // Battery percentage
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setCursor(45, bar_y + 1);
+    m_tft->printf("%.0f%%", battery_soc);
+
+    // GPS time
+    m_tft->setCursor(75, bar_y + 1);
+    if (gps_valid) {
+        m_tft->setTextColor(ST77XX_CYAN);
+        m_tft->printf("%02u:%02u:%02u", gps_hour, gps_minute, gps_second);
+    } else {
+        m_tft->setTextColor(ST77XX_YELLOW);
+        m_tft->print("--:--:--");
+    }
+
+    // Sampling Hz
+    if (!isfinite(sample_hz) || sample_hz < 0.0f) {
+        sample_hz = 0.0f;
+    } else if (sample_hz > 999.9f) {
+        sample_hz = 999.9f;
+    }
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setCursor(160, bar_y + 1);
+    m_tft->printf("%.1fHz", sample_hz);
 }
 
 void ST7789Display::cycle_display_mode() {
@@ -304,9 +402,74 @@ void ST7789Display::show_shutdown_screen(uint32_t seconds_remaining) {
 
 void ST7789Display::show_splash_screen(const char* version_string, const char* commit_sha,
                                       const char* branch, const char* build_time) {
-    if (!m_initialized || m_tft == nullptr || m_framebuffer == nullptr) return;
-    return; // TEMPORARILY DISABLED
+    if (!m_initialized || m_tft == nullptr) return;
 
+    m_tft->fillScreen(ST77XX_BLACK);
+
+    // Title - Project Name
+    m_tft->setTextColor(ST77XX_CYAN);
+    m_tft->setTextSize(2);
+    m_tft->setCursor(10, 8);
+    m_tft->println("OpenPony");
+    m_tft->setCursor(10, 28);
+    m_tft->println("Logger");
+
+    // Version/Tag
+    m_tft->setTextColor(ST77XX_GREEN);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(5, 55);
+    m_tft->print("Version: ");
+    m_tft->setTextColor(ST77XX_YELLOW);
+    if (version_string != nullptr) {
+        const char* tag_start = strstr(version_string, "v");
+        if (tag_start) {
+            char tag[16];
+            sscanf(tag_start, "%15s", tag);
+            m_tft->println(tag);
+        } else {
+            m_tft->println(version_string);
+        }
+    }
+
+    // Commit SHA
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setCursor(5, 70);
+    m_tft->print("Commit: ");
+    m_tft->setTextColor(ST77XX_YELLOW);
+    if (commit_sha != nullptr) {
+        char short_sha[9];
+        snprintf(short_sha, sizeof(short_sha), "%.7s", commit_sha);
+        m_tft->println(short_sha);
+    }
+
+    // Branch
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setCursor(5, 85);
+    m_tft->print("Branch: ");
+    m_tft->setTextColor(ST77XX_CYAN);
+    if (branch != nullptr) {
+        char short_branch[25];
+        snprintf(short_branch, sizeof(short_branch), "%.24s", branch);
+        m_tft->println(short_branch);
+    }
+
+    // Build timestamp
+    m_tft->setTextColor(ST77XX_WHITE);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(5, 105);
+    m_tft->print("Built: ");
+    m_tft->setTextColor(ST77XX_GREEN);
+    if (build_time != nullptr) {
+        char short_time[21];
+        snprintf(short_time, sizeof(short_time), "%.20s", build_time);
+        m_tft->println(short_time);
+    }
+
+    // Footer - License
+    m_tft->setTextColor(ST77XX_MAGENTA);
+    m_tft->setTextSize(1);
+    m_tft->setCursor(5, 125);
+    m_tft->println("MIT License - Open Source");
 }
 
 // ============================================================================
