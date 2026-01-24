@@ -575,16 +575,49 @@ void StatusMonitor::task_loop() {
                 uint32_t uptime_sec = now / 1000;
                 float sample_hz = sample_count > 0 && uptime_sec > 0 ? (float)sample_count / uptime_sec : 0.0f;
                 if (!isfinite(sample_hz) || sample_hz < 0.0f) sample_hz = 0.0f;
+
+                // Low-pass filter for display only (reduces jitter, smooths noise)
+                // EMA (Exponential Moving Average): filtered = alpha * new + (1-alpha) * prev
+                // Alpha = 0.4 balances responsiveness (2-3 updates to settle) vs smoothness
+                // NOTE: Raw data in storage remains unfiltered for post-processing flexibility
+                static bool filter_initialized = false;
+                static float filtered_accel_x, filtered_accel_y, filtered_accel_z;
+                static float filtered_gyro_x, filtered_gyro_y, filtered_gyro_z;
+                static float filtered_gps_speed;
+
+                const float alpha = 0.4f;
+
+                if (!filter_initialized) {
+                    // Initialize filter state with first sample
+                    filtered_accel_x = accel.x;
+                    filtered_accel_y = accel.y;
+                    filtered_accel_z = accel.z;
+                    filtered_gyro_x = gyro.x;
+                    filtered_gyro_y = gyro.y;
+                    filtered_gyro_z = gyro.z;
+                    filtered_gps_speed = gps.speed;
+                    filter_initialized = true;
+                } else {
+                    // Apply EMA filter
+                    filtered_accel_x = alpha * accel.x + (1.0f - alpha) * filtered_accel_x;
+                    filtered_accel_y = alpha * accel.y + (1.0f - alpha) * filtered_accel_y;
+                    filtered_accel_z = alpha * accel.z + (1.0f - alpha) * filtered_accel_z;
+                    filtered_gyro_x = alpha * gyro.x + (1.0f - alpha) * filtered_gyro_x;
+                    filtered_gyro_y = alpha * gyro.y + (1.0f - alpha) * filtered_gyro_y;
+                    filtered_gyro_z = alpha * gyro.z + (1.0f - alpha) * filtered_gyro_z;
+                    filtered_gps_speed = alpha * gps.speed + (1.0f - alpha) * filtered_gps_speed;
+                }
+
                 ST7789Display::update(now,
                     accel.temperature,
-                    accel.x, accel.y, accel.z,
-                    gyro.x, gyro.y, gyro.z,
+                    filtered_accel_x, filtered_accel_y, filtered_accel_z,
+                    filtered_gyro_x, filtered_gyro_y, filtered_gyro_z,
                     battery.state_of_charge, battery.voltage,
                     gps.valid, sample_count, sample_hz,
                     is_paused,
                     gps.latitude, gps.longitude, gps.altitude,
                     gps.hour, gps.minute, gps.second,
-                    gps.speed
+                    filtered_gps_speed
                 );
             } else if (current_mode == DisplayMode::INFO_SCREEN) {
                 ST7789Display::show_info_screen("192.168.4.1", "OpenPonyLogger");
