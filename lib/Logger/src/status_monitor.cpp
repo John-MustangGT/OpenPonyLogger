@@ -208,31 +208,16 @@ void StatusMonitor::task_loop() {
     bool d0_pressed = false;
     bool d1_pressed = false;
     bool d2_pressed = false;
-    
+
     uint32_t loop_count = 0;
     uint32_t broadcast_count = 0;
     uint32_t yield_count = 0;
 
-    Serial.println(">>> StatusMonitor::task_loop() ENTRY <<<");
-    delay(100);  // Ensure it gets flushed
     ESP_LOGI(TAG, "[StatusMonitor] Task loop started on Core 0");
-    Serial.println(">>> After ESP_LOGI <<<");
-    Serial.println(">>> Entering while loop <<<");
-    delay(100);
 
     while (m_running) {
-        // Print first few loops to confirm we're executing
-        if (loop_count < 5) {
-            Serial.printf(">>> Loop iteration %u <<<\n", loop_count);
-        }
-
         loop_count++;
         uint32_t now = millis();
-
-        // Debug heartbeat every 100 loops (~4 seconds at 25 loops/sec)
-        if (loop_count % 100 == 0) {
-            Serial.printf(">>> Heartbeat: loop=%u, uptime=%ums <<<\n", loop_count, now);
-        }
         
         // ===== Handle D0 Button (Pause/Resume) =====
         int d0_state = digitalRead(BUTTON_D0);
@@ -303,11 +288,6 @@ void StatusMonitor::task_loop() {
             }
         }
         d2_last_state = d2_state;
-
-        // Debug: After button handling
-        if (loop_count < 5) {
-            Serial.println(">>> After button handling <<<");
-        }
 
         // ===== Auto-Start/Stop Logic =====
         // Separate auto-start/stop for dynamics (GPS/IMU) vs data (OBD)
@@ -575,25 +555,17 @@ void StatusMonitor::task_loop() {
         vTaskDelay(pdMS_TO_TICKS(1));
         yield_count++;
 
-        // Debug: After all main loop logic
-        if (loop_count < 5) {
-            Serial.println(">>> After main loop logic, before display <<<");
-        }
-
         // NOTE: WebSocket broadcasts removed from StatusMonitor to reduce Core 0 load.
         // RTLoggerThread on Core 1 handles all WebSocket broadcasts at 5Hz (200ms interval).
         // This eliminates duplicate broadcasts and moves JSON serialization off Core 0.
 
-        // Display updates: 1Hz refresh using PSRAM-only framebuffer
+        // Display updates: 1Hz refresh with direct TFT rendering
         static uint32_t last_display_update = 0;
         if (m_rt_logger != nullptr && now - last_display_update >= 1000) {
-            ESP_LOGI(TAG, "[DEBUG] Starting 1Hz display update...");
-
             DisplayMode current_mode = ST7789Display::get_display_mode();
             bool is_paused = m_rt_logger->is_storage_paused();
 
             if (current_mode == DisplayMode::MAIN_SCREEN) {
-                ESP_LOGI(TAG, "[DEBUG] Getting sensor data...");
                 // Get latest sensor data for display
                 gps_data_t gps = m_rt_logger->get_last_gps();
                 accel_data_t accel = m_rt_logger->get_last_accel();
@@ -603,11 +575,7 @@ void StatusMonitor::task_loop() {
                 uint32_t uptime_sec = now / 1000;
                 float sample_hz = sample_count > 0 && uptime_sec > 0 ? (float)sample_count / uptime_sec : 0.0f;
                 if (!isfinite(sample_hz) || sample_hz < 0.0f) sample_hz = 0.0f;
-
-                ESP_LOGI(TAG, "[DEBUG] Calling ST7789Display::update()...");
-                uint32_t display_start = millis();
-                ST7789Display::update(
-                    now,
+                ST7789Display::update(now,
                     accel.temperature,
                     accel.x, accel.y, accel.z,
                     gyro.x, gyro.y, gyro.z,
@@ -618,24 +586,10 @@ void StatusMonitor::task_loop() {
                     gps.hour, gps.minute, gps.second,
                     gps.speed
                 );
-                ESP_LOGI(TAG, "[DEBUG] Display update returned successfully");
-
-                if (DebugFlags::ENABLE_DISPLAY_TIMING) {
-                    uint32_t display_elapsed = millis() - display_start;
-                    if (display_elapsed > 10) {
-                        ESP_LOGI(TAG, "[Display] Update took %ums", display_elapsed);
-                    }
-                }
             } else if (current_mode == DisplayMode::INFO_SCREEN) {
-                ESP_LOGI(TAG, "[DEBUG] Showing info screen...");
                 ST7789Display::show_info_screen("192.168.4.1", "OpenPonyLogger");
             }
             // DisplayMode::DARK - do nothing
-
-            // Print 1Hz serial monitor update showing total samples, RTLogger Hz, and write count
-            ESP_LOGI(TAG, "[Monitor] Samples: %u | RTLogger: %.1f Hz | Writes: %u",
-                     sample_count, sample_hz, m_write_count);
-            ESP_LOGI(TAG, "[DEBUG] 1Hz update complete");
 
             last_display_update = now;
 
@@ -646,9 +600,6 @@ void StatusMonitor::task_loop() {
         // Memory and task monitoring every 5 seconds
         static uint32_t last_memory_report = 0;
         if (now - last_memory_report >= 5000) {
-            Serial.printf(">>> Memory report at %ums <<<\n", now);
-
-            // ========== MEMORY STATS ==========
             size_t free_dram = heap_caps_get_free_size(MALLOC_CAP_8BIT);
             size_t total_dram = heap_caps_get_total_size(MALLOC_CAP_8BIT);
             size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
@@ -657,17 +608,14 @@ void StatusMonitor::task_loop() {
             uint8_t dram_used_pct = (uint8_t)(((total_dram - free_dram) * 100) / total_dram);
             uint8_t psram_used_pct = (total_psram > 0) ? (uint8_t)(((total_psram - free_psram) * 100) / total_psram) : 0;
 
-            // ========== TASK STATS ==========
             UBaseType_t task_count = uxTaskGetNumberOfTasks();
 
-            // Print memory + task stats
-            Serial.printf(">>> [System] DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%) | Tasks: %u <<<\n",
+            Serial.printf("[System] DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%) | Tasks: %u\n",
                          (total_dram - free_dram) / 1024, total_dram / 1024, dram_used_pct,
                          (total_psram - free_psram) / 1024, total_psram / 1024, psram_used_pct,
                          task_count);
 
             last_memory_report = now;
-            Serial.println(">>> Memory report complete <<<");
         }
 
         // Print status at regular intervals (rate-limited to reduce Core 0 serial overhead)
