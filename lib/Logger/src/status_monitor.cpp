@@ -66,12 +66,12 @@ bool StatusMonitor::start() {
     m_last_report_time = millis();
     
     // Create task on core 0
-    // Increased stack from 6144 to 8192 to prevent stack overflow panics
+    // Stack increased: 6144 → 8192 → 16384 bytes for debug builds
     // xTaskCreatePinnedToCore(function, name, stack, param, priority, handle, core)
     BaseType_t result = xTaskCreatePinnedToCore(
         StatusMonitor::task_wrapper,
         "StatusMonitor",
-        8192,  // Stack size (increased from 6144 to prevent stack overflow)
+        16384,  // Stack size: 16KB for safety margin with -O0 debug builds
         this,
         1,  // Priority
         &m_task_handle,

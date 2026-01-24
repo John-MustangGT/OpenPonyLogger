@@ -40,11 +40,11 @@ bool RTLoggerThread::start() {
 
     // Create FreeRTOS task pinned to Core 1 (real-time sensor acquisition)
     // Core 1 is dedicated to sensor reading without blocking operations
-    // Increased stack from 4096 to 8192 to prevent stack overflow panics
+    // Stack increased: 4096 → 8192 → 16384 bytes for debug builds
     BaseType_t result = xTaskCreatePinnedToCore(
         task_wrapper,           // Task function
         "RTLogger",             // Task name
-        8192,                   // Stack size (increased from 4096 to prevent stack overflow)
+        16384,                  // Stack size: 16KB for safety margin with -O0 debug builds
         this,                   // Parameter (pointer to this)
         2,                      // Priority (high - more important than housekeeping)
         &m_task_handle,         // Task handle
