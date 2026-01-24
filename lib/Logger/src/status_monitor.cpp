@@ -670,7 +670,9 @@ void StatusMonitor::task_loop() {
                 reset_reason_printed = true;
             }
 
-            Serial.printf("[System] DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%) | Tasks: %u\n",
+            uint32_t uptime_sec = millis() / 1000;
+            Serial.printf("[System] Uptime: %us | DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%) | Tasks: %u\n",
+                         uptime_sec,
                          (total_dram - free_dram) / 1024, total_dram / 1024, dram_used_pct,
                          (total_psram - free_psram) / 1024, total_psram / 1024, psram_used_pct,
                          task_count);
