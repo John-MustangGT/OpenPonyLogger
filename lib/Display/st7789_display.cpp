@@ -240,9 +240,9 @@ void ST7789Display::update(uint32_t uptime_ms,
                           float gps_speed) {
     if (!m_initialized || m_tft == nullptr) return;
 
-    // Direct TFT rendering (simple approach, may have some flicker)
-    // Clear screen
-    m_tft->fillScreen(ST77XX_BLACK);
+    // Direct TFT rendering - update only changed regions to avoid watchdog timeout
+    // Full screen clear takes too long (~100-150ms) and triggers TWDT reset
+    // Instead, we clear specific regions before drawing (see fillRect calls below)
 
     // Calculate uptime
     uint32_t uptime_sec = uptime_ms / 1000;
@@ -251,6 +251,9 @@ void ST7789Display::update(uint32_t uptime_ms,
     uint32_t seconds = uptime_sec % 60;
 
     // ROW 1: TIME & SAMPLE COUNT
+    // Clear row background first to avoid artifacts
+    m_tft->fillRect(0, 0, TFT_WIDTH, 24, ST77XX_BLACK);
+
     char timestr[16];
     snprintf(timestr, sizeof(timestr), "%u:%02u:%02u", hours, minutes, seconds);
     m_tft->setTextSize(2);
@@ -272,16 +275,19 @@ void ST7789Display::update(uint32_t uptime_ms,
     m_tft->print(sampstr);
 
     // ROW 2: ACCELEROMETER
+    m_tft->fillRect(0, 24, TFT_WIDTH, 20, ST77XX_BLACK);
     m_tft->setTextColor(ST77XX_WHITE);
     m_tft->setTextSize(1);
     m_tft->setCursor(2, 28);
     m_tft->printf("A:%+.2f %+.2f %+.2f", accel_x, accel_y, accel_z);
 
     // ROW 3: GYROSCOPE
+    m_tft->fillRect(0, 44, TFT_WIDTH, 20, ST77XX_BLACK);
     m_tft->setCursor(2, 48);
     m_tft->printf("G:%+.1f %+.1f %+.1f", gyro_x, gyro_y, gyro_z);
 
     // ROW 4: GPS COORDINATES
+    m_tft->fillRect(0, 64, TFT_WIDTH, 20, ST77XX_BLACK);
     m_tft->setCursor(2, 68);
     if (gps_valid) {
         m_tft->setTextColor(ST77XX_GREEN);
@@ -292,6 +298,7 @@ void ST7789Display::update(uint32_t uptime_ms,
     }
 
     // ROW 5: GPS SPEED
+    m_tft->fillRect(0, 84, TFT_WIDTH, 20, ST77XX_BLACK);
     m_tft->setCursor(2, 88);
     if (gps_valid) {
         float display_speed = convert_speed(gps_speed);
@@ -303,9 +310,11 @@ void ST7789Display::update(uint32_t uptime_ms,
     }
 
     // BOTTOM: GPS TIME & BATTERY
+    // Clear bottom section
     uint16_t bar_height = 6;
     uint16_t bar_y = 135 - bar_height - 4;
     uint16_t bar_width = 40;
+    m_tft->fillRect(0, 104, TFT_WIDTH, 31, ST77XX_BLACK);
 
     // Battery bar
     uint16_t bar_color = ST77XX_GREEN;
