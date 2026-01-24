@@ -40,10 +40,11 @@ bool RTLoggerThread::start() {
 
     // Create FreeRTOS task pinned to Core 1 (real-time sensor acquisition)
     // Core 1 is dedicated to sensor reading without blocking operations
+    // Increased stack from 4096 to 8192 to prevent stack overflow panics
     BaseType_t result = xTaskCreatePinnedToCore(
         task_wrapper,           // Task function
         "RTLogger",             // Task name
-        4096,                   // Stack size (sufficient for sensor polling + JSON serialization)
+        8192,                   // Stack size (increased from 4096 to prevent stack overflow)
         this,                   // Parameter (pointer to this)
         2,                      // Priority (high - more important than housekeeping)
         &m_task_handle,         // Task handle

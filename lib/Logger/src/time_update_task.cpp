@@ -28,10 +28,11 @@ bool TimeUpdateTask::start() {
     }
     
     // Create low-priority task (priority 1 = very low)
+    // Increased stack from 2048 to 8192 to prevent stack overflow panics
     BaseType_t result = xTaskCreatePinnedToCore(
         task_wrapper,
         "TimeUpdate",
-        2048,  // Stack size
+        8192,  // Stack size (increased from 2048 - NVS writes need more stack)
         this,
         1,  // Priority (0-25, lower = lower priority)
         &m_task_handle,
