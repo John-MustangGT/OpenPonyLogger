@@ -559,9 +559,11 @@ void StatusMonitor::task_loop() {
         // RTLoggerThread on Core 1 handles all WebSocket broadcasts at 5Hz (200ms interval).
         // This eliminates duplicate broadcasts and moves JSON serialization off Core 0.
 
-        // Display updates: 1Hz refresh with direct TFT rendering
+        // Display updates: 0.2Hz refresh (every 5 seconds) to prevent watchdog timeout
+        // Direct TFT rendering with fillRect clears is still expensive (~150ms total)
+        // Reducing from 1Hz to 0.2Hz gives watchdog much more breathing room
         static uint32_t last_display_update = 0;
-        if (m_rt_logger != nullptr && now - last_display_update >= 1000) {
+        if (m_rt_logger != nullptr && now - last_display_update >= 5000) {
             DisplayMode current_mode = ST7789Display::get_display_mode();
             bool is_paused = m_rt_logger->is_storage_paused();
 

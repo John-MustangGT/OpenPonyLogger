@@ -286,6 +286,9 @@ void ST7789Display::update(uint32_t uptime_ms,
     m_tft->setCursor(2, 48);
     m_tft->printf("G:%+.1f %+.1f %+.1f", gyro_x, gyro_y, gyro_z);
 
+    // Yield to watchdog (display rendering takes ~150ms total, yield midway through)
+    vTaskDelay(pdMS_TO_TICKS(2));
+
     // ROW 4: GPS COORDINATES
     m_tft->fillRect(0, 64, TFT_WIDTH, 20, ST77XX_BLACK);
     m_tft->setCursor(2, 68);
