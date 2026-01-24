@@ -488,13 +488,18 @@ void WiFiManager::handle_websocket_event(AsyncWebSocket* server, AsyncWebSocketC
 }
 
 void WiFiManager::handle_logs_list(AsyncWebServerRequest* request) {
+    Serial.println("[WiFi] /api/logs endpoint called");
+
     if (!LogFileManager::init()) {
+        Serial.println("[WiFi] LogFileManager init failed!");
         request->send(500, "application/json", "{\"success\":false,\"error\":\"Log manager not initialized\"}");
         return;
     }
-    
+
+    Serial.println("[WiFi] Calling scan_log_files()...");
     // Scan for current session
-    LogFileManager::scan_log_files();
+    uint32_t found = LogFileManager::scan_log_files();
+    Serial.printf("[WiFi] scan_log_files() returned: %u files\n", found);
     
     const std::vector<log_file_info_t>& files = LogFileManager::get_log_files();
     
