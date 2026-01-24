@@ -222,7 +222,30 @@ void setup() {
     delay(500);
 
     ESP_LOGI(TAG, "=== BOOT START ===");
-    
+
+    // Print reset reason to diagnose crashes
+    esp_reset_reason_t reset_reason = esp_reset_reason();
+    const char* reset_reason_str = "UNKNOWN";
+    switch (reset_reason) {
+        case ESP_RST_UNKNOWN:    reset_reason_str = "UNKNOWN"; break;
+        case ESP_RST_POWERON:    reset_reason_str = "POWERON"; break;
+        case ESP_RST_EXT:        reset_reason_str = "EXTERNAL_PIN"; break;
+        case ESP_RST_SW:         reset_reason_str = "SOFTWARE"; break;
+        case ESP_RST_PANIC:      reset_reason_str = "PANIC/EXCEPTION"; break;
+        case ESP_RST_INT_WDT:    reset_reason_str = "INTERRUPT_WATCHDOG"; break;
+        case ESP_RST_TASK_WDT:   reset_reason_str = "TASK_WATCHDOG"; break;
+        case ESP_RST_WDT:        reset_reason_str = "OTHER_WATCHDOG"; break;
+        case ESP_RST_DEEPSLEEP:  reset_reason_str = "DEEP_SLEEP_WAKE"; break;
+        case ESP_RST_BROWNOUT:   reset_reason_str = "BROWNOUT (LOW_VOLTAGE)"; break;
+        case ESP_RST_SDIO:       reset_reason_str = "SDIO"; break;
+        default: reset_reason_str = "UNKNOWN"; break;
+    }
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "╔═════════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║  RESET REASON: %-42s║", reset_reason_str);
+    ESP_LOGI(TAG, "╚═════════════════════════════════════════════════════════════╝");
+    ESP_LOGI(TAG, "");
+
     // Check wake-up cause
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
     bool woke_from_usb = false;
