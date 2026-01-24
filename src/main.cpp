@@ -178,22 +178,25 @@ bool init_sensors() {
     compass_wrapper = new ICM20948CompassWrapper(imu_driver);
     reporter.print_debug("  ✓ Wrappers created");
     
-    // Initialize OBD-II BLE driver (must run on Core 0 due to BLE stack)
-    reporter.print_debug("  → Initializing OBD-II BLE driver (vgate iCar 2 Pro)...");
-    if (!IcarBleDriver::init()) {
-        reporter.print_debug("  ✗ WARNING: Failed to initialize OBD BLE driver, continuing without OBD");
-        obd_wrapper = nullptr;
-    } else {
-        reporter.print_debug("  ✓ OBD BLE stack initialized");
-        
-        // Start scanning for OBD device in background
-        reporter.print_debug("  → Starting BLE scan for vgate iCar 2 Pro...");
-        IcarBleDriver::start_scan();
-        reporter.print_debug("  ✓ BLE scan started (will auto-connect when device found)");
-        
-        // Create OBD wrapper
-        obd_wrapper = new IcarBleWrapper();
-    }
+    // TEMPORARILY DISABLED FOR DEBUGGING: Initialize OBD-II BLE driver (must run on Core 0 due to BLE stack)
+    reporter.print_debug("  → SKIPPING OBD-II BLE initialization (debugging crash)...");
+    obd_wrapper = nullptr;
+    reporter.print_debug("  ✓ OBD disabled - testing stability without BLE stack");
+
+    // if (!IcarBleDriver::init()) {
+    //     reporter.print_debug("  ✗ WARNING: Failed to initialize OBD BLE driver, continuing without OBD");
+    //     obd_wrapper = nullptr;
+    // } else {
+    //     reporter.print_debug("  ✓ OBD BLE stack initialized");
+    //
+    //     // Start scanning for OBD device in background
+    //     reporter.print_debug("  → Starting BLE scan for vgate iCar 2 Pro...");
+    //     IcarBleDriver::start_scan();
+    //     reporter.print_debug("  ✓ BLE scan started (will auto-connect when device found)");
+    //
+    //     // Create OBD wrapper
+    //     obd_wrapper = new IcarBleWrapper();
+    // }
     
     // Initialize sensor manager with the drivers
     reporter.print_debug("  → Initializing Sensor Manager...");
