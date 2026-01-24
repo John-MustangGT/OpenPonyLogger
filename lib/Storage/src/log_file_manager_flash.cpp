@@ -40,27 +40,34 @@ void LogFileManager::set_flash_storage(FlashStorage* storage) {
 
 uint32_t LogFileManager::scan_log_files() {
     s_log_files.clear();
-    
+
     if (!s_partition) {
+        ESP_LOGE(TAG, "Partition is null!");
         return 0;
     }
-    
+
+    ESP_LOGI(TAG, "Scanning flash partition for log files...");
+    ESP_LOGI(TAG, "Flash storage pointer: %p", s_flash_storage);
+
     // Read session header
     session_start_header_t header;
     esp_err_t err = esp_partition_read(s_partition, 0, &header, sizeof(session_start_header_t));
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read session header");
+        ESP_LOGE(TAG, "Failed to read session header: %d", err);
         return 0;
     }
-    
+
+    ESP_LOGI(TAG, "Read session header - magic: 0x%08X (expected: 0x%08X)", header.magic, SESSION_START_MAGIC);
+
     // Validate magic
     if (header.magic != SESSION_START_MAGIC) {
-        ESP_LOGW(TAG, "No valid session found");
+        ESP_LOGW(TAG, "No valid session found (magic mismatch)");
         return 0;
     }
-    
+
     // Verify CRC
     uint32_t crc = esp_crc32_le(0, (uint8_t*)&header, offsetof(session_start_header_t, crc32));
+    ESP_LOGI(TAG, "Session header CRC: 0x%08X (calculated: 0x%08X)", header.crc32, crc);
     if (crc != header.crc32) {
         ESP_LOGW(TAG, "Session header CRC mismatch");
         return 0;
@@ -69,13 +76,21 @@ uint32_t LogFileManager::scan_log_files() {
     // Create file info
     log_file_info_t info;
     info.filename = "current_session.opl";
-    info.file_size = s_flash_storage ? s_flash_storage->get_bytes_written() : 0;
+
+    if (s_flash_storage) {
+        info.file_size = s_flash_storage->get_bytes_written();
+        ESP_LOGI(TAG, "Flash storage bytes written: %zu", info.file_size);
+    } else {
+        ESP_LOGW(TAG, "Flash storage pointer is NULL! Using 0 size");
+        info.file_size = 0;
+    }
+
     info.gps_utc_timestamp = header.gps_utc_at_lock;
     info.esp_timestamp_us = header.esp_time_at_start;
     memcpy(info.startup_id, header.startup_id, 16);
     info.valid = true;
     info.block_count = 0;  // Will be counted during stream
-    
+
     s_log_files.push_back(info);
 
     ESP_LOGI(TAG, "Found session: %zu bytes", info.file_size);
