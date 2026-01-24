@@ -646,6 +646,29 @@ void StatusMonitor::task_loop() {
 
             UBaseType_t task_count = uxTaskGetNumberOfTasks();
 
+            // Print reset reason on first report only
+            static bool reset_reason_printed = false;
+            if (!reset_reason_printed) {
+                esp_reset_reason_t reset_reason = esp_reset_reason();
+                const char* reason_str = "UNKNOWN";
+                switch (reset_reason) {
+                    case ESP_RST_UNKNOWN:    reason_str = "UNKNOWN"; break;
+                    case ESP_RST_POWERON:    reason_str = "POWERON"; break;
+                    case ESP_RST_EXT:        reason_str = "EXTERNAL"; break;
+                    case ESP_RST_SW:         reason_str = "SOFTWARE"; break;
+                    case ESP_RST_PANIC:      reason_str = "PANIC/EXCEPTION"; break;
+                    case ESP_RST_INT_WDT:    reason_str = "INTERRUPT_WATCHDOG"; break;
+                    case ESP_RST_TASK_WDT:   reason_str = "TASK_WATCHDOG"; break;
+                    case ESP_RST_WDT:        reason_str = "OTHER_WATCHDOG"; break;
+                    case ESP_RST_DEEPSLEEP:  reason_str = "DEEPSLEEP_WAKE"; break;
+                    case ESP_RST_BROWNOUT:   reason_str = "BROWNOUT_LOW_VOLTAGE"; break;
+                    case ESP_RST_SDIO:       reason_str = "SDIO"; break;
+                    default: break;
+                }
+                Serial.printf("[System] *** LAST RESET REASON: %s ***\n", reason_str);
+                reset_reason_printed = true;
+            }
+
             Serial.printf("[System] DRAM: %u/%u KB (%u%%) | PSRAM: %u/%u KB (%u%%) | Tasks: %u\n",
                          (total_dram - free_dram) / 1024, total_dram / 1024, dram_used_pct,
                          (total_psram - free_psram) / 1024, total_psram / 1024, psram_used_pct,
